@@ -1,0 +1,17 @@
+# Environment files — NEVER commit these
+.env
+.env.local
+.env.*.local
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+
+# Next.js
+frontend/.next/
+frontend/node_modules/
+
+# macOS
+.DS_Store
