@@ -23,10 +23,11 @@ app = FastAPI(
         "- Module 2: Backend Foundation\n"
         "- Module 3: LangGraph Foundation\n"
         "- Module 4: Research Agent\n"
-        "- Module 5: Planner Agent\n\n"
+        "- Module 5: Planner Agent\n"
+        "- Module 6: Writer Agent\n\n"
         "Use `/api/showcase/plan` to run the full pipeline end-to-end."
     ),
-    version="1.5.0",
+    version="1.6.0",
 )
 
 # CORS configuration
@@ -54,7 +55,7 @@ async def root():
     return {
         "message": "Welcome to the AI Social Media Manager API",
         "docs": "Visit /docs for the interactive API showcase",
-        "modules_built": 5,
+        "modules_built": 6,
     }
 
 
