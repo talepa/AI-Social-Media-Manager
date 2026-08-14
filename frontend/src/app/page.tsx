@@ -6,6 +6,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import HeroHome from "../components/HeroHome";
 import {
   downloadReportJson,
   downloadReportMarkdown,
@@ -17,6 +18,7 @@ const API_BASE = "http://localhost:8001";
 type View = "hero" | "studio" | "loading" | "results";
 type SourceKey = "tavily" | "news" | "papers";
 type TabKey = "report" | "overview" | SourceKey;
+type LayoutMode = "cards" | "list";
 
 interface ResearchItem {
   title: string;
@@ -602,13 +604,62 @@ function NewsTimeline({ items }: { items: ResearchItem[] }) {
   );
 }
 
-function Finding({ item, index }: { item: ResearchItem; index: number }) {
-  const [open, setOpen] = useState(index === 0);
+function FindingThumb({
+  imageUrl,
+  faviconUrl,
+  fallback,
+}: {
+  imageUrl?: string | null;
+  faviconUrl?: string | null;
+  fallback: string;
+}) {
+  const [failed, setFailed] = useState(false);
+  const src = !failed && imageUrl ? imageUrl : null;
+
+  if (src) {
+    return (
+      <div className="finding-thumb">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={src}
+          alt=""
+          loading="lazy"
+          referrerPolicy="no-referrer"
+          onError={() => setFailed(true)}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className="finding-thumb">
+      <div className="finding-thumb-empty">
+        {faviconUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={faviconUrl} alt="" referrerPolicy="no-referrer" />
+        ) : (
+          <span>{fallback}</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Finding({
+  item,
+  index,
+  layout,
+}: {
+  item: ResearchItem;
+  index: number;
+  layout: LayoutMode;
+}) {
+  const [open, setOpen] = useState(false);
   const meta = SOURCE_META[item.source];
 
   return (
     <article
-      className={`finding-card rise${open ? " is-open" : ""}`}
+      className={`finding-card finding-${layout} rise${open ? " is-open" : ""}`}
       style={{ animationDelay: `${Math.min(index, 8) * 0.03}s` }}
     >
       <button
@@ -616,41 +667,39 @@ function Finding({ item, index }: { item: ResearchItem; index: number }) {
         className="finding-card-btn"
         onClick={() => setOpen((v) => !v)}
       >
-        <div className="finding-thumb">
-          {item.image_url ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={item.image_url} alt="" loading="lazy" />
-          ) : (
-            <div className="finding-thumb-empty">
-              {item.favicon_url ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={item.favicon_url} alt="" />
-              ) : (
-                <span>{meta.label.slice(0, 1)}</span>
-              )}
-            </div>
-          )}
-        </div>
+        <FindingThumb
+          imageUrl={item.image_url}
+          faviconUrl={item.favicon_url}
+          fallback={meta.label.slice(0, 1)}
+        />
         <div className="finding-body">
           <div className="finding-meta">
             <span>
               {item.favicon_url ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={item.favicon_url} alt="" className="inline-favicon" />
+                <img src={item.favicon_url} alt="" className="inline-favicon" referrerPolicy="no-referrer" />
               ) : null}
               {String(index + 1).padStart(2, "0")} · {meta.label} · {hostnameOf(item.url)}
             </span>
             <span>{open ? "Hide" : "Read"}</span>
           </div>
           <h3>{item.title}</h3>
+          {layout === "cards" && item.content ? (
+            <p className="finding-snippet">{item.content}</p>
+          ) : null}
         </div>
       </button>
 
       {open && (
         <div className="fade-in finding-expand">
-          {item.image_url ? (
+          {layout === "list" && item.image_url ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={item.image_url} alt="" className="finding-hero" />
+            <img
+              src={item.image_url}
+              alt=""
+              className="finding-hero"
+              referrerPolicy="no-referrer"
+            />
           ) : null}
           <p className="finding-submeta">
             {item.published ? `${item.published} · ` : ""}
@@ -666,6 +715,48 @@ function Finding({ item, index }: { item: ResearchItem; index: number }) {
         </div>
       )}
     </article>
+  );
+}
+
+function LayoutToggle({
+  layout,
+  onChange,
+}: {
+  layout: LayoutMode;
+  onChange: (mode: LayoutMode) => void;
+}) {
+  return (
+    <div className="layout-toggle" role="group" aria-label="Research view format">
+      <button
+        type="button"
+        className={`layout-btn${layout === "cards" ? " is-active" : ""}`}
+        onClick={() => onChange("cards")}
+        aria-pressed={layout === "cards"}
+        title="Cards"
+      >
+        <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden>
+          <rect x="1" y="1" width="5" height="5" fill="currentColor" />
+          <rect x="8" y="1" width="5" height="5" fill="currentColor" />
+          <rect x="1" y="8" width="5" height="5" fill="currentColor" />
+          <rect x="8" y="8" width="5" height="5" fill="currentColor" />
+        </svg>
+        <span>Cards</span>
+      </button>
+      <button
+        type="button"
+        className={`layout-btn${layout === "list" ? " is-active" : ""}`}
+        onClick={() => onChange("list")}
+        aria-pressed={layout === "list"}
+        title="List"
+      >
+        <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden>
+          <rect x="1" y="2" width="12" height="2" fill="currentColor" />
+          <rect x="1" y="6" width="12" height="2" fill="currentColor" />
+          <rect x="1" y="10" width="12" height="2" fill="currentColor" />
+        </svg>
+        <span>List</span>
+      </button>
+    </div>
   );
 }
 
@@ -791,7 +882,86 @@ export default function Home() {
   const [reportBusy, setReportBusy] = useState(false);
   const [downloadBusy, setDownloadBusy] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
+  const [layout, setLayout] = useState<LayoutMode>("cards");
+  const [cursorOn, setCursorOn] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const cursorRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const fine = window.matchMedia("(pointer: fine)").matches;
+    if (reduce || !fine) return;
+
+    let raf = 0;
+    let pending = false;
+    let mx = window.innerWidth * 0.5;
+    let my = window.innerHeight * 0.3;
+    const root = document.documentElement;
+
+    const paint = () => {
+      pending = false;
+      const w = Math.max(window.innerWidth, 1);
+      const h = Math.max(window.innerHeight, 1);
+      const x = (mx / w) * 100;
+      const y = (my / h) * 100;
+      const nx = mx / w - 0.5;
+      const ny = my / h - 0.5;
+      root.style.setProperty("--bg-x", `${x.toFixed(2)}%`);
+      root.style.setProperty("--bg-y", `${y.toFixed(2)}%`);
+      root.style.setProperty("--bg-ox", `${(nx * 28).toFixed(1)}px`);
+      root.style.setProperty("--bg-oy", `${(ny * 18).toFixed(1)}px`);
+      root.style.setProperty("--tilt-x", `${(-ny * 3.5).toFixed(2)}deg`);
+      root.style.setProperty("--tilt-y", `${(nx * 4.5).toFixed(2)}deg`);
+      const cur = cursorRef.current;
+      if (cur) {
+        cur.style.transform = `translate3d(${mx}px, ${my}px, 0)`;
+      }
+    };
+
+    const onMove = (e: PointerEvent) => {
+      mx = e.clientX;
+      my = e.clientY;
+      if (!pending) {
+        pending = true;
+        raf = requestAnimationFrame(paint);
+      }
+    };
+
+    const onEnter = () => setCursorOn(true);
+    const onLeave = () => setCursorOn(false);
+
+    paint();
+    window.addEventListener("pointermove", onMove, { passive: true });
+    document.documentElement.addEventListener("mouseenter", onEnter);
+    document.documentElement.addEventListener("mouseleave", onLeave);
+    window.addEventListener("pointerdown", onEnter, { passive: true });
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener("pointermove", onMove);
+      document.documentElement.removeEventListener("mouseenter", onEnter);
+      document.documentElement.removeEventListener("mouseleave", onLeave);
+      window.removeEventListener("pointerdown", onEnter);
+      root.classList.remove("has-custom-cursor");
+    };
+  }, []);
+
+  useEffect(() => {
+    const fine = window.matchMedia("(pointer: fine)").matches;
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (!fine || reduce) return;
+    // Show cursor as soon as pointer moves once
+    const arm = () => setCursorOn(true);
+    window.addEventListener("pointermove", arm, { once: true, passive: true });
+    return () => window.removeEventListener("pointermove", arm);
+  }, []);
+
+  useEffect(() => {
+    const fine = window.matchMedia("(pointer: fine)").matches;
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (!fine || reduce) return;
+    document.documentElement.classList.toggle("has-custom-cursor", cursorOn);
+    return () => document.documentElement.classList.remove("has-custom-cursor");
+  }, [cursorOn]);
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "auto" });
@@ -953,11 +1123,31 @@ export default function Home() {
     return [];
   }, [result, tab]);
 
+  const overviewItems: ResearchItem[] = useMemo(() => {
+    if (!result) return [];
+    return [
+      ...result.tavily_results,
+      ...result.news_results,
+      ...result.papers_results,
+    ];
+  }, [result]);
+
   return (
-    <div style={{ minHeight: "100vh" }}>
+    <div style={{ minHeight: "100vh", position: "relative" }}>
+      <div className="bg-follow" aria-hidden />
+      <div
+        ref={cursorRef}
+        className={`app-cursor${cursorOn ? " is-on" : ""}`}
+        aria-hidden
+      >
+        <span className="app-cursor-ring" />
+        <span className="app-cursor-dot" />
+      </div>
       {/* Persistent brand strip */}
       <header
         style={{
+          position: "relative",
+          zIndex: 1,
           maxWidth: 1080,
           margin: "0 auto",
           padding: "1.35rem clamp(1.25rem, 4vw, 2rem)",
@@ -1005,217 +1195,7 @@ export default function Home() {
         </div>
       </header>
 
-      {/* HERO */}
-      {view === "hero" && (
-        <main
-          className="fade-in"
-          style={{
-            maxWidth: 1100,
-            margin: "0 auto",
-            padding: "0 clamp(1.25rem, 4vw, 2rem) 4.5rem",
-          }}
-        >
-          <section className="hero-grid">
-            <div>
-              <p
-                style={{
-                  margin: "0 0 1.25rem",
-                  fontSize: "0.7rem",
-                  letterSpacing: "0.22em",
-                  textTransform: "uppercase",
-                  color: "var(--muted)",
-                }}
-              >
-                Field notes · Web · News · Papers
-              </p>
-              <h1
-                style={{
-                  margin: 0,
-                  fontFamily: "var(--font-display)",
-                  fontSize: "clamp(2.9rem, 7.2vw, 5.1rem)",
-                  fontWeight: 500,
-                  letterSpacing: "-0.035em",
-                  lineHeight: 0.94,
-                  maxWidth: "10ch",
-                }}
-              >
-                Your research desk, open
-              </h1>
-              <p
-                style={{
-                  margin: "1.5rem 0 0",
-                  maxWidth: "28rem",
-                  fontSize: "1.05rem",
-                  lineHeight: 1.65,
-                  color: "var(--ink-soft)",
-                }}
-              >
-                One brief pulls live web pages, headlines, and academic papers —
-                then writes a full research report you can browse and cite.
-              </p>
-              <div style={{ display: "flex", gap: "0.85rem", marginTop: "2.25rem", flexWrap: "wrap" }}>
-                <button type="button" className="btn-3d" onClick={() => setView("studio")}>
-                  Research
-                </button>
-                <button
-                  type="button"
-                  className="btn-3d-ghost"
-                  onClick={() => {
-                    document.getElementById("capabilities")?.scrollIntoView({ behavior: "smooth" });
-                  }}
-                >
-                  See instruments
-                </button>
-              </div>
-            </div>
-
-            <div className="research-desk" aria-hidden>
-              <div className="desk-surface" />
-              <div className="doc-stack back">
-                <span className="doc-tag">Papers</span>
-                <div className="doc-line" />
-                <div className="doc-line" />
-                <div className="doc-line short" />
-                <div className="doc-line" />
-                <div className="doc-line short" />
-              </div>
-              <div className="doc-stack mid">
-                <span className="doc-tag">News</span>
-                <div className="doc-line" />
-                <div className="doc-line short" />
-                <div className="doc-line" />
-                <div className="doc-line" />
-                <div className="doc-line short" />
-              </div>
-              <div className="doc-stack front">
-                <span className="doc-tag">Web · Tavily</span>
-                <p
-                  style={{
-                    margin: "0 0 0.85rem",
-                    fontFamily: "var(--font-display)",
-                    fontSize: "1.35rem",
-                    lineHeight: 1.2,
-                    fontWeight: 500,
-                  }}
-                >
-                  Topic brief → ranked sources
-                </p>
-                <div className="doc-line" />
-                <div className="doc-line" />
-                <div className="doc-line short" />
-                <div className="doc-line" />
-                <p style={{ margin: "1rem 0 0", fontSize: "0.72rem", color: "var(--muted)", letterSpacing: "0.08em" }}>
-                  ATLAS DOSSIER · LIVE
-                </p>
-              </div>
-              <div className="desk-pins">
-                <span className="pin">Web</span>
-                <span className="pin">News</span>
-                <span className="pin">Papers</span>
-              </div>
-            </div>
-          </section>
-
-          <section id="capabilities" style={{ paddingTop: "3.5rem" }}>
-            <p
-              style={{
-                margin: "0 0 1.75rem",
-                fontSize: "0.7rem",
-                letterSpacing: "0.18em",
-                textTransform: "uppercase",
-                color: "var(--muted)",
-              }}
-            >
-              Instruments on the desk
-            </p>
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
-                gap: "1.75rem",
-              }}
-            >
-              {CAPABILITIES.map((cap, i) => (
-                <button
-                  key={cap.title}
-                  type="button"
-                  className="cap-card rise"
-                  onClick={() => setView("studio")}
-                  style={{
-                    animationDelay: `${i * 0.04}s`,
-                    textAlign: "left",
-                    border: "none",
-                    borderTop: "1px solid var(--ink)",
-                    background: "transparent",
-                    padding: "1.1rem 0 0",
-                    cursor: "pointer",
-                    color: "inherit",
-                    width: "100%",
-                  }}
-                >
-                  <p
-                    style={{
-                      margin: 0,
-                      fontSize: "0.66rem",
-                      letterSpacing: "0.14em",
-                      textTransform: "uppercase",
-                      color: "var(--muted)",
-                    }}
-                  >
-                    {String(i + 1).padStart(2, "0")}
-                  </p>
-                  <p
-                    style={{
-                      margin: "0.5rem 0 0",
-                      fontFamily: "var(--font-display)",
-                      fontSize: "1.45rem",
-                      fontWeight: 500,
-                    }}
-                  >
-                    {cap.title}
-                  </p>
-                  <p style={{ margin: "0.55rem 0 0", fontSize: "0.9rem", lineHeight: 1.55, color: "var(--ink-soft)" }}>
-                    {cap.body}
-                  </p>
-                </button>
-              ))}
-            </div>
-
-            <div
-              style={{
-                marginTop: "3.5rem",
-                padding: "2rem 0",
-                borderTop: "1px solid var(--ink)",
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                gap: "1.5rem",
-                flexWrap: "wrap",
-              }}
-            >
-              <div>
-                <p
-                  style={{
-                    margin: 0,
-                    fontFamily: "var(--font-display)",
-                    fontSize: "clamp(1.5rem, 3vw, 2rem)",
-                    fontWeight: 500,
-                    letterSpacing: "-0.02em",
-                  }}
-                >
-                  Clear the desk. Start a brief.
-                </p>
-                <p style={{ margin: "0.4rem 0 0", color: "var(--muted)", fontSize: "0.9rem" }}>
-                  Research → loader → category dossier.
-                </p>
-              </div>
-              <button type="button" className="btn-3d" onClick={() => setView("studio")}>
-                Research
-              </button>
-            </div>
-          </section>
-        </main>
-      )}
+      {view === "hero" && <HeroHome onResearch={() => setView("studio")} />}
 
       {/* STUDIO — open research sheet */}
       {view === "studio" && (
@@ -1776,6 +1756,61 @@ export default function Home() {
                   );
                 })}
               </div>
+
+              <header
+                style={{
+                  marginTop: "2.25rem",
+                  marginBottom: "1rem",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  gap: "1rem",
+                  alignItems: "end",
+                  flexWrap: "wrap",
+                }}
+              >
+                <div>
+                  <p
+                    style={{
+                      margin: 0,
+                      fontSize: "0.66rem",
+                      letterSpacing: "0.16em",
+                      textTransform: "uppercase",
+                      color: "var(--muted)",
+                    }}
+                  >
+                    All sources · {overviewItems.length} findings
+                  </p>
+                  <h3
+                    style={{
+                      margin: "0.35rem 0 0",
+                      fontFamily: "var(--font-display)",
+                      fontSize: "2.1rem",
+                      fontWeight: 500,
+                    }}
+                  >
+                    Findings
+                  </h3>
+                </div>
+                <LayoutToggle layout={layout} onChange={setLayout} />
+              </header>
+              <div
+                className="rule-grow"
+                style={{ height: 1, background: "var(--ink)", margin: "0 0 1rem" }}
+              />
+              <div className={layout === "cards" ? "findings-grid" : "findings-list panel-scroll"}>
+                {overviewItems.length === 0 ? (
+                  <p style={{ color: "var(--muted)" }}>No findings yet.</p>
+                ) : (
+                  overviewItems.map((item, i) => (
+                    <Finding
+                      key={`overview-${item.url}-${i}`}
+                      item={item}
+                      index={i}
+                      layout={layout}
+                    />
+                  ))
+                )}
+              </div>
             </div>
           )}
 
@@ -1814,29 +1849,8 @@ export default function Home() {
                     {SOURCE_META[tab].label}
                   </h3>
                 </div>
-                <div style={{ display: "flex", gap: "0.45rem" }}>
-                  <button
-                    type="button"
-                    className="btn-3d-ghost"
-                    style={{ padding: "0.55rem 0.85rem" }}
-                    onClick={() => {
-                      const i = SOURCE_TAB_ORDER.indexOf(tab);
-                      setTab(SOURCE_TAB_ORDER[(i - 1 + SOURCE_TAB_ORDER.length) % SOURCE_TAB_ORDER.length]);
-                    }}
-                  >
-                    ←
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-3d-ghost"
-                    style={{ padding: "0.55rem 0.85rem" }}
-                    onClick={() => {
-                      const i = SOURCE_TAB_ORDER.indexOf(tab);
-                      setTab(SOURCE_TAB_ORDER[(i + 1) % SOURCE_TAB_ORDER.length]);
-                    }}
-                  >
-                    →
-                  </button>
+                <div style={{ display: "flex", gap: "0.45rem", alignItems: "center" }}>
+                  <LayoutToggle layout={layout} onChange={setLayout} />
                 </div>
               </header>
               <div
@@ -1851,12 +1865,17 @@ export default function Home() {
                   {result.errors[tab]}
                 </p>
               )}
-              <div className="panel-scroll">
+              <div className={layout === "cards" ? "findings-grid" : "findings-list panel-scroll"}>
                 {activeItems.length === 0 ? (
                   <p style={{ color: "var(--muted)" }}>No findings in this category.</p>
                 ) : (
                   activeItems.map((item, i) => (
-                    <Finding key={`${item.url}-${i}`} item={item} index={i} />
+                    <Finding
+                      key={`${item.url}-${i}`}
+                      item={item}
+                      index={i}
+                      layout={layout}
+                    />
                   ))
                 )}
               </div>

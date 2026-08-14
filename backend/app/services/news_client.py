@@ -8,16 +8,40 @@ from __future__ import annotations
 
 import logging
 import xml.etree.ElementTree as ET
-from typing import List
+from typing import List, Optional
 from urllib.parse import quote_plus
 
 import httpx
 
 from app.schemas.research import ResearchItem
+from app.services.preview_client import favicon_for_url
 
 logger = logging.getLogger(__name__)
 
-USER_AGENT = "AI-Social-Media-Manager/0.2 (Feature2 news research)"
+USER_AGENT = (
+    "Mozilla/5.0 (compatible; AI-Social-Media-Manager/0.3; +https://localhost)"
+)
+MEDIA_NS = {"media": "http://search.yahoo.com/mrss/"}
+
+
+def _https_upgrade(url: Optional[str]) -> Optional[str]:
+    if not url:
+        return None
+    url = str(url).strip()
+    if url.startswith("http://"):
+        return "https://" + url[len("http://") :]
+    return url or None
+
+
+def _rss_media_image(item: ET.Element) -> Optional[str]:
+    for tag in ("thumbnail", "content"):
+        el = item.find(f"media:{tag}", MEDIA_NS)
+        if el is None:
+            continue
+        src = (el.get("url") or "").strip()
+        if src.startswith("http"):
+            return _https_upgrade(src)
+    return None
 
 
 def search_news(topic: str, limit: int = 8) -> List[ResearchItem]:
@@ -56,27 +80,33 @@ def search_news(topic: str, limit: int = 8) -> List[ResearchItem]:
         pub_date = (item.findtext("pubDate") or "").strip() or None
         source_el = item.find("source")
         source_name = (source_el.text or "").strip() if source_el is not None else ""
+        source_homepage = (
+            (source_el.get("url") or "").strip() if source_el is not None else ""
+        )
 
         if not title:
             continue
 
-        # Strip crude HTML from description if present; capture first image if any
         content = description
-        image_url = None
+        image_url = _rss_media_image(item)
         if "<" in content:
             try:
                 wrapped = ET.fromstring(f"<div>{description}</div>")
                 content = "".join(wrapped.itertext())
-                for img in wrapped.iter("img"):
-                    src = (img.get("src") or "").strip()
-                    if src.startswith("http"):
-                        image_url = src
-                        break
+                if not image_url:
+                    for img in wrapped.iter("img"):
+                        src = (img.get("src") or "").strip()
+                        if src.startswith("http"):
+                            image_url = _https_upgrade(src)
+                            break
             except ET.ParseError:
                 content = description
 
         if source_name and source_name not in content:
             content = f"{source_name}: {content}".strip(": ")
+
+        # Prefer publisher homepage favicon over news.google.com
+        favicon = favicon_for_url(source_homepage or link)
 
         items.append(
             ResearchItem(
@@ -86,6 +116,7 @@ def search_news(topic: str, limit: int = 8) -> List[ResearchItem]:
                 source="news",
                 published=pub_date,
                 image_url=image_url,
+                favicon_url=favicon,
             )
         )
         if len(items) >= limit:

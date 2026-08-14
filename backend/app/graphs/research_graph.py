@@ -22,7 +22,11 @@ from app.schemas.research import (
 )
 from app.services.news_client import search_news
 from app.services.papers_client import search_papers
-from app.services.preview_client import collect_media_urls, enrich_items_with_previews
+from app.services.preview_client import (
+    backfill_images_from_media,
+    collect_media_urls,
+    enrich_items_with_previews,
+)
 from app.services.report_synthesizer import synthesize_report
 from app.services.tavily_client import search_web
 
@@ -59,6 +63,7 @@ def tavily_node(state: MultiSourceState) -> dict:
                 source="tavily",
                 score=r.score,
                 image_url=r.image_url,
+                favicon_url=r.favicon_url,
             )
             for r in results
         ]
@@ -108,8 +113,8 @@ def gather_node(state: MultiSourceState) -> dict:
 
     # Prefer fetching previews for web + news (visual); papers less often have og:image
     tavily = enrich_items_with_previews(tavily, max_fetch=8)
-    news = enrich_items_with_previews(news, max_fetch=6)
-    papers = enrich_items_with_previews(papers, max_fetch=3)
+    news = enrich_items_with_previews(news, max_fetch=8)
+    papers = enrich_items_with_previews(papers, max_fetch=4)
 
     media = collect_media_urls(
         tavily,
@@ -117,6 +122,12 @@ def gather_node(state: MultiSourceState) -> dict:
         papers,
         extra=list(state.get("media_urls") or []),
     )
+    # Use leftover gallery images for any items still missing thumbnails
+    tavily = backfill_images_from_media(tavily, media)
+    news = backfill_images_from_media(news, media)
+    papers = backfill_images_from_media(papers, media)
+
+    media = collect_media_urls(tavily, news, papers, extra=media)
     return {
         "tavily_results": tavily,
         "news_results": news,

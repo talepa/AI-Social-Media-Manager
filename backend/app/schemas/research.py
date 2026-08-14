@@ -22,6 +22,10 @@ class WebResult(BaseModel):
         default=None,
         description="Optional preview / article image URL",
     )
+    favicon_url: Optional[str] = Field(
+        default=None,
+        description="Optional site favicon from the search provider",
+    )
 
 
 class WebResearchResult(BaseModel):

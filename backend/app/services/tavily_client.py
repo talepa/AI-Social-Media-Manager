@@ -34,6 +34,41 @@ def _require_api_key() -> str:
     return key
 
 
+def _https_upgrade(url: Optional[str]) -> Optional[str]:
+    if not url:
+        return None
+    url = str(url).strip()
+    if url.startswith("http://"):
+        return "https://" + url[len("http://") :]
+    return url or None
+
+
+def _coerce_image(value: object) -> Optional[str]:
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    if isinstance(value, dict):
+        for key in ("url", "src", "image"):
+            raw = value.get(key)
+            if isinstance(raw, str) and raw.strip():
+                return raw.strip()
+    return None
+
+
+def _first_image_url(item: dict) -> Optional[str]:
+    """Prefer per-result images[] (current Tavily), then legacy single fields."""
+    images = item.get("images")
+    if isinstance(images, list):
+        for entry in images:
+            found = _coerce_image(entry)
+            if found:
+                return found
+    for key in ("image", "img_src", "thumbnail"):
+        found = _coerce_image(item.get(key))
+        if found:
+            return found
+    return None
+
+
 def search_web(
     topic: str,
     limit: int = 10,
@@ -72,6 +107,7 @@ def search_web(
         "search_depth": search_depth,
         "include_answer": include_answer,
         "include_images": True,
+        "include_favicon": True,
         "topic": "general",
     }
     if time_range:
@@ -80,8 +116,18 @@ def search_web(
     try:
         response = client.search(**kwargs)
     except Exception as exc:
-        logger.exception("Tavily search failed")
-        raise RuntimeError(f"Tavily search failed: {exc}") from exc
+        # Older tavily-python builds may not accept include_favicon
+        if "include_favicon" in kwargs:
+            logger.warning("Retrying Tavily search without include_favicon: %s", exc)
+            kwargs.pop("include_favicon", None)
+            try:
+                response = client.search(**kwargs)
+            except Exception as exc2:
+                logger.exception("Tavily search failed")
+                raise RuntimeError(f"Tavily search failed: {exc2}") from exc2
+        else:
+            logger.exception("Tavily search failed")
+            raise RuntimeError(f"Tavily search failed: {exc}") from exc
 
     raw_results = response.get("results") or []
     results: List[WebResult] = []
@@ -91,16 +137,17 @@ def search_web(
         if not title and not url:
             continue
         score = item.get("score")
-        image = item.get("image") or item.get("img_src") or item.get("thumbnail")
-        if isinstance(image, dict):
-            image = image.get("url") or image.get("src")
+        image = _https_upgrade(_first_image_url(item))
+        favicon = item.get("favicon")
+        favicon_url = _https_upgrade(str(favicon).strip() if favicon else None)
         results.append(
             WebResult(
                 title=title or url,
                 url=url,
                 content=(item.get("content") or "").strip(),
                 score=float(score) if score is not None else None,
-                image_url=(str(image).strip() if image else None) or None,
+                image_url=image,
+                favicon_url=favicon_url,
             )
         )
 
@@ -113,11 +160,8 @@ def search_web(
     raw_images = response.get("images") or []
     image_urls: List[str] = []
     for img in raw_images:
-        if isinstance(img, str) and img.strip():
-            image_urls.append(img.strip())
-        elif isinstance(img, dict):
-            u = img.get("url") or img.get("src")
-            if u:
-                image_urls.append(str(u).strip())
+        u = _https_upgrade(_coerce_image(img))
+        if u and u not in image_urls:
+            image_urls.append(u)
 
     return results, answer, image_urls[:12]
