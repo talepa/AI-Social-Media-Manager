@@ -14,11 +14,12 @@ app = FastAPI(
     title="AI Social Media Manager API",
     description=(
         "LangGraph-first content pipeline.\n\n"
-        "**Feature 1 (live):** Tavily web research — "
-        "`POST /api/research/tavily`\n\n"
-        "Later: more sources, rate insights, write posts, human approval, publish."
+        "**Feature 1:** `POST /api/research/tavily`\n"
+        "**Feature 2:** `POST /api/research/multi` "
+        "(Tavily + News + Papers in parallel)\n\n"
+        "Later: rate insights, write posts, human approval, publish."
     ),
-    version="2.1.0-feature1-tavily",
+    version="2.2.0-feature2",
 )
 
 app.add_middleware(
@@ -37,13 +38,14 @@ async def root():
     logger.info("Root endpoint accessed")
     return {
         "message": "AI Social Media Manager API",
-        "feature": 1,
+        "feature": 2,
         "docs": "/docs",
-        "web_research": "POST /api/research/tavily",
+        "tavily": "POST /api/research/tavily",
+        "multi_research": "POST /api/research/multi",
     }
 
 
 @app.get("/health")
 async def health_check():
     logger.info("Health check endpoint accessed")
-    return {"status": "ok", "service": "AI Social Media Manager Backend", "feature": 1}
+    return {"status": "ok", "service": "AI Social Media Manager Backend", "feature": 2}
