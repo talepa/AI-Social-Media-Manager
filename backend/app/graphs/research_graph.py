@@ -22,6 +22,7 @@ from app.schemas.research import (
 )
 from app.services.news_client import search_news
 from app.services.papers_client import search_papers
+from app.services.preview_client import collect_media_urls, enrich_items_with_previews
 from app.services.report_synthesizer import synthesize_report
 from app.services.tavily_client import search_web
 
@@ -100,8 +101,28 @@ def papers_node(state: MultiSourceState) -> dict:
 
 
 def gather_node(state: MultiSourceState) -> dict:
-    # Join point after parallel sources — state already holds each list.
-    return {}
+    """Join parallel sources, then enrich missing previews from real pages."""
+    tavily = _normalize_items(state.get("tavily_results"), "tavily")
+    news = _normalize_items(state.get("news_results"), "news")
+    papers = _normalize_items(state.get("papers_results"), "papers")
+
+    # Prefer fetching previews for web + news (visual); papers less often have og:image
+    tavily = enrich_items_with_previews(tavily, max_fetch=8)
+    news = enrich_items_with_previews(news, max_fetch=6)
+    papers = enrich_items_with_previews(papers, max_fetch=3)
+
+    media = collect_media_urls(
+        tavily,
+        news,
+        papers,
+        extra=list(state.get("media_urls") or []),
+    )
+    return {
+        "tavily_results": tavily,
+        "news_results": news,
+        "papers_results": papers,
+        "media_urls": media,
+    }
 
 
 def synthesize_node(state: MultiSourceState) -> dict:
@@ -162,6 +183,7 @@ def _normalize_items(raw: object, source: str) -> List[ResearchItem]:
                     content=item.content,
                     source="tavily",
                     score=item.score,
+                    image_url=item.image_url,
                 )
             )
         elif isinstance(item, dict):

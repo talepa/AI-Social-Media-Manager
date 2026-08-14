@@ -59,7 +59,7 @@ def _digest(parts: list[str]) -> str:
 
 
 def multi_cache_key(topic: str, limit: int) -> str:
-    return _digest(["multi", "v1", normalize_topic(topic), str(int(limit))])
+    return _digest(["multi", "v3-multipapers", normalize_topic(topic), str(int(limit))])
 
 
 def synthesize_cache_key(

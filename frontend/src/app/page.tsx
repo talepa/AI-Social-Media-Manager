@@ -28,6 +28,8 @@ interface ResearchItem {
   authors: string[] | null;
   venue: string | null;
   citation_count: number | null;
+  image_url?: string | null;
+  favicon_url?: string | null;
 }
 
 interface RankedFinding {
@@ -118,8 +120,8 @@ const SOURCE_META: Record<
   },
   papers: {
     label: "Papers",
-    tool: "Semantic Scholar · OpenAlex",
-    method: "Academic research — abstracts, authors, venues, citations.",
+    tool: "S2 · OpenAlex · Crossref · arXiv",
+    method: "Academic libraries in parallel — merged and deduped by title/DOI.",
     index: "03",
   },
 };
@@ -157,7 +159,7 @@ const EXAMPLE_TOPICS = [
   "Remote work productivity research",
 ];
 
-const TAB_ORDER: TabKey[] = ["report", "overview", "tavily", "news", "papers"];
+const SOURCE_TAB_ORDER: TabKey[] = ["overview", "tavily", "news", "papers"];
 
 function hostnameOf(url: string): string {
   try {
@@ -468,19 +470,6 @@ function ResearchReportView({
         </ul>
       </ReportSection>
 
-      {report.media_urls?.length > 0 && (
-        <ReportSection index="05b" title="Figures & previews">
-          <div className="media-gallery">
-            {report.media_urls.map((url) => (
-              <a key={url} href={url} target="_blank" rel="noreferrer" className="media-tile">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={url} alt="" loading="lazy" />
-              </a>
-            ))}
-          </div>
-        </ReportSection>
-      )}
-
       <ReportSection index="06" title="Sources">
         <ol style={{ listStyle: "none", margin: 0, padding: 0 }}>
           {report.sources.map((s, i) => (
@@ -519,103 +508,159 @@ function ResearchReportView({
   );
 }
 
+function ScoreBars({ items }: { items: ResearchItem[] }) {
+  const scored = items
+    .filter((i) => i.score != null)
+    .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
+    .slice(0, 6);
+  if (scored.length === 0) return null;
+  return (
+    <div className="viz-block">
+      <p className="viz-label">Relevance scores (web)</p>
+      <div className="score-bars">
+        {scored.map((i) => (
+          <div key={i.url} className="score-bar-row" title={i.title}>
+            <span className="score-bar-name">{i.title}</span>
+            <div className="score-bar-track">
+              <div
+                className="score-bar-fill"
+                style={{ width: `${Math.round((i.score ?? 0) * 100)}%` }}
+              />
+            </div>
+            <span className="score-bar-val">{(i.score ?? 0).toFixed(2)}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function CitationBars({ items }: { items: ResearchItem[] }) {
+  const cited = items
+    .filter((i) => i.citation_count != null && i.citation_count > 0)
+    .sort((a, b) => (b.citation_count ?? 0) - (a.citation_count ?? 0))
+    .slice(0, 6);
+  if (cited.length === 0) return null;
+  const max = Math.max(...cited.map((i) => i.citation_count ?? 1), 1);
+  return (
+    <div className="viz-block">
+      <p className="viz-label">Citations (papers)</p>
+      <div className="score-bars">
+        {cited.map((i) => (
+          <div key={i.url} className="score-bar-row" title={i.title}>
+            <span className="score-bar-name">{i.title}</span>
+            <div className="score-bar-track">
+              <div
+                className="score-bar-fill"
+                style={{
+                  width: `${Math.round(((i.citation_count ?? 0) / max) * 100)}%`,
+                }}
+              />
+            </div>
+            <span className="score-bar-val">{i.citation_count}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function NewsTimeline({ items }: { items: ResearchItem[] }) {
+  const dated = items.filter((i) => i.published).slice(0, 8);
+  if (dated.length === 0) return null;
+  return (
+    <div className="viz-block">
+      <p className="viz-label">News timeline</p>
+      <div className="news-timeline">
+        {dated.map((i) => (
+          <a
+            key={i.url}
+            href={i.url}
+            target="_blank"
+            rel="noreferrer"
+            className="timeline-card"
+          >
+            <div className="timeline-thumb">
+              {i.image_url ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={i.image_url} alt="" loading="lazy" />
+              ) : i.favicon_url ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={i.favicon_url} alt="" className="timeline-favicon" />
+              ) : (
+                <span className="timeline-placeholder" />
+              )}
+            </div>
+            <div>
+              <p className="timeline-date">{i.published}</p>
+              <p className="timeline-title">{i.title}</p>
+            </div>
+          </a>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function Finding({ item, index }: { item: ResearchItem; index: number }) {
   const [open, setOpen] = useState(index === 0);
   const meta = SOURCE_META[item.source];
 
   return (
     <article
-      className={`finding-row rise${open ? " is-open" : ""}`}
-      style={{
-        animationDelay: `${Math.min(index, 8) * 0.03}s`,
-        borderBottom: "1px solid var(--line)",
-      }}
+      className={`finding-card rise${open ? " is-open" : ""}`}
+      style={{ animationDelay: `${Math.min(index, 8) * 0.03}s` }}
     >
       <button
         type="button"
+        className="finding-card-btn"
         onClick={() => setOpen((v) => !v)}
-        style={{
-          width: "100%",
-          textAlign: "left",
-          border: "none",
-          background: "transparent",
-          padding: "1.35rem 0.35rem",
-          cursor: "pointer",
-          color: "inherit",
-        }}
       >
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            gap: "1rem",
-            marginBottom: "0.45rem",
-            flexWrap: "wrap",
-          }}
-        >
-          <span
-            style={{
-              fontSize: "0.66rem",
-              letterSpacing: "0.16em",
-              textTransform: "uppercase",
-              color: "var(--muted)",
-            }}
-          >
-            {String(index + 1).padStart(2, "0")} · {meta.tool}
-          </span>
-          <span style={{ fontSize: "0.72rem", color: "var(--muted)" }}>
-            {open ? "Hide" : "Read"} · {hostnameOf(item.url)}
-          </span>
+        <div className="finding-thumb">
+          {item.image_url ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={item.image_url} alt="" loading="lazy" />
+          ) : (
+            <div className="finding-thumb-empty">
+              {item.favicon_url ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={item.favicon_url} alt="" />
+              ) : (
+                <span>{meta.label.slice(0, 1)}</span>
+              )}
+            </div>
+          )}
         </div>
-        <h3
-          style={{
-            margin: 0,
-            fontFamily: "var(--font-display)",
-            fontSize: "clamp(1.2rem, 2vw, 1.55rem)",
-            fontWeight: 500,
-            lineHeight: 1.3,
-            letterSpacing: "-0.01em",
-          }}
-        >
-          {item.title}
-        </h3>
+        <div className="finding-body">
+          <div className="finding-meta">
+            <span>
+              {item.favicon_url ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={item.favicon_url} alt="" className="inline-favicon" />
+              ) : null}
+              {String(index + 1).padStart(2, "0")} · {meta.label} · {hostnameOf(item.url)}
+            </span>
+            <span>{open ? "Hide" : "Read"}</span>
+          </div>
+          <h3>{item.title}</h3>
+        </div>
       </button>
 
       {open && (
-        <div className="fade-in" style={{ padding: "0 0.35rem 1.4rem" }}>
-          <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--muted)" }}>
+        <div className="fade-in finding-expand">
+          {item.image_url ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={item.image_url} alt="" className="finding-hero" />
+          ) : null}
+          <p className="finding-submeta">
             {item.published ? `${item.published} · ` : ""}
             {item.citation_count != null ? `${item.citation_count} citations · ` : ""}
             {item.score != null ? `relevance ${item.score.toFixed(2)} · ` : ""}
             {item.authors?.length ? item.authors.join(" · ") : ""}
             {item.venue ? ` — ${item.venue}` : ""}
           </p>
-          {item.content ? (
-            <p
-              style={{
-                margin: "0.75rem 0 1rem",
-                fontSize: "0.95rem",
-                lineHeight: 1.7,
-                color: "var(--ink-soft)",
-                maxWidth: "40rem",
-              }}
-            >
-              {item.content}
-            </p>
-          ) : null}
-          <a
-            href={item.url}
-            target="_blank"
-            rel="noreferrer"
-            style={{
-              fontSize: "0.72rem",
-              letterSpacing: "0.14em",
-              textTransform: "uppercase",
-              borderBottom: "1px solid var(--ink)",
-              textDecoration: "none",
-              paddingBottom: 2,
-            }}
-          >
+          {item.content ? <p className="finding-content">{item.content}</p> : null}
+          <a href={item.url} target="_blank" rel="noreferrer" className="finding-open">
             Open source
           </a>
         </div>
@@ -773,14 +818,15 @@ export default function Home() {
   useEffect(() => {
     if (view !== "results" || !result) return;
     const onKey = (e: KeyboardEvent) => {
+      if (tab === "report") return;
       if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
-      const i = TAB_ORDER.indexOf(tab);
+      const i = SOURCE_TAB_ORDER.indexOf(tab);
       if (i < 0) return;
       e.preventDefault();
       const next =
         e.key === "ArrowRight"
-          ? TAB_ORDER[(i + 1) % TAB_ORDER.length]
-          : TAB_ORDER[(i - 1 + TAB_ORDER.length) % TAB_ORDER.length];
+          ? SOURCE_TAB_ORDER[(i + 1) % SOURCE_TAB_ORDER.length]
+          : SOURCE_TAB_ORDER[(i - 1 + SOURCE_TAB_ORDER.length) % SOURCE_TAB_ORDER.length];
       setTab(next);
     };
     window.addEventListener("keydown", onKey);
@@ -1390,7 +1436,7 @@ export default function Home() {
                   color: "var(--muted)",
                 }}
               >
-                Dossier · report + {totals.all} sources
+                Dossier · {totals.all} sources
                 {result.cached ? " · cached" : ""}
               </p>
               <h2
@@ -1411,7 +1457,7 @@ export default function Home() {
               <button
                 type="button"
                 className="btn-3d-ghost"
-                style={{ padding: "0.75rem 1.1rem" }}
+                style={{ padding: "0.7rem 1rem" }}
                 onClick={() => setView("studio")}
               >
                 New research
@@ -1419,32 +1465,51 @@ export default function Home() {
               <button
                 type="button"
                 className="btn-3d-ghost"
-                style={{ padding: "0.75rem 1.1rem" }}
+                style={{ padding: "0.7rem 1rem" }}
                 title="Bypass cache and fetch fresh sources"
                 onClick={() => {
                   setTopic(result.topic);
                   void runResearch(true);
                 }}
               >
-                Refresh sources
+                Refresh
               </button>
-              {!result.report && (
-                <button
-                  type="button"
-                  className="btn-3d"
-                  style={{ padding: "0.75rem 1.1rem" }}
-                  onClick={() => setTab("report")}
-                >
-                  Generate report
-                </button>
-              )}
             </div>
           </div>
 
-          <nav className="cat-rail cat-rail-5" aria-label="Categories">
+          <div className={`report-cta${tab === "report" ? " is-active" : ""}`}>
+            <div className="report-cta-copy">
+              <p className="report-cta-kicker">
+                {result.report ? "Briefing ready" : "Next step"}
+              </p>
+              <p className="report-cta-title">
+                {result.report
+                  ? "Open your research report"
+                  : "Get the full research report"}
+              </p>
+              <p className="report-cta-body">
+                {result.report
+                  ? "Summary, ranked findings, news, papers, gaps, and downloads — Markdown, JSON, or PDF."
+                  : "Turn these sources into a readable briefing with findings, visuals, and export options."}
+              </p>
+            </div>
+            <button
+              type="button"
+              className="btn-3d report-cta-btn"
+              onClick={() => setTab("report")}
+            >
+              {tab === "report"
+                ? "Viewing report"
+                : result.report
+                  ? "Open report"
+                  : "Generate report"}
+            </button>
+          </div>
+
+          {tab !== "report" && (
+          <nav className="cat-rail" aria-label="Categories">
             {(
               [
-                ["report", "Report", result.report ? 1 : 0, 1],
                 ["overview", "Overview", totals.all, totals.all],
                 ["tavily", "Web", totals.web, totals.all],
                 ["news", "News", totals.news, totals.all],
@@ -1470,15 +1535,17 @@ export default function Home() {
                     >
                       {label}
                     </span>
-                    <span className="count">{key === "report" ? (result.report ? "●" : "–") : count}</span>
+                    <span className="count">{count}</span>
                   </div>
                   <div className="cat-meter" aria-hidden>
-                    <span style={{ width: `${key === "report" ? (result.report ? 100 : 0) : pct}%` }} />
+                    <span style={{ width: `${pct}%` }} />
                   </div>
                 </button>
               );
             })}
           </nav>
+          )}
+          {tab !== "report" && (
           <p
             style={{
               margin: "-0.75rem 0 1.25rem",
@@ -1486,12 +1553,22 @@ export default function Home() {
               color: "var(--muted)",
             }}
           >
-            Report first · source stacks · ← → keys
+            Browse sources · ← → keys
           </p>
+          )}
 
           {tab === "report" && (
-            <div key="report">
-              {!result.report && !reportBusy && (
+            <div key="report" style={{ marginTop: "0.5rem" }}>
+              <div style={{ marginBottom: "1.25rem" }}>
+                <button
+                  type="button"
+                  className="btn-3d-ghost"
+                  style={{ padding: "0.55rem 0.9rem" }}
+                  onClick={() => setTab("overview")}
+                >
+                  ← Back to sources
+                </button>
+              </div>              {!result.report && !reportBusy && (
                 <div
                   className="rise"
                   style={{
@@ -1616,8 +1693,23 @@ export default function Home() {
                   </p>
                 </aside>
               )}
-              <p style={{ margin: "0 0 1.15rem", color: "var(--ink-soft)", lineHeight: 1.6 }}>
-                Jump into a stack. Each card shows a preview of what’s inside.
+
+              <NewsTimeline items={result.news_results} />
+              <div className="viz-grid">
+                <SourceMixChart
+                  stats={{
+                    web: totals.web,
+                    news: totals.news,
+                    papers: totals.papers,
+                    total: totals.all,
+                  }}
+                />
+                <ScoreBars items={result.tavily_results} />
+                <CitationBars items={result.papers_results} />
+              </div>
+
+              <p style={{ margin: "1.5rem 0 1.15rem", color: "var(--ink-soft)", lineHeight: 1.6 }}>
+                Jump into a stack — cards use real previews from the pages (not AI images).
               </p>
               <div
                 style={{
@@ -1634,16 +1726,25 @@ export default function Home() {
                   ] as const
                 ).map(([key, count, items]) => {
                   const m = SOURCE_META[key];
+                  const cover = items.find((it) => it.image_url)?.image_url;
                   return (
                     <button
                       key={key}
                       type="button"
-                      className="source-card"
+                      className="source-card source-card-visual"
                       onClick={() => setTab(key)}
                     >
+                      <div className="source-card-cover">
+                        {cover ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={cover} alt="" />
+                        ) : (
+                          <span>{m.label}</span>
+                        )}
+                      </div>
                       <p
                         style={{
-                          margin: 0,
+                          margin: "0.85rem 0 0",
                           fontSize: "0.66rem",
                           letterSpacing: "0.14em",
                           textTransform: "uppercase",
@@ -1654,7 +1755,7 @@ export default function Home() {
                       </p>
                       <p
                         style={{
-                          margin: "0.45rem 0 0",
+                          margin: "0.35rem 0 0",
                           fontFamily: "var(--font-display)",
                           fontSize: "1.65rem",
                           fontWeight: 500,
@@ -1719,8 +1820,8 @@ export default function Home() {
                     className="btn-3d-ghost"
                     style={{ padding: "0.55rem 0.85rem" }}
                     onClick={() => {
-                      const i = TAB_ORDER.indexOf(tab);
-                      setTab(TAB_ORDER[(i - 1 + TAB_ORDER.length) % TAB_ORDER.length]);
+                      const i = SOURCE_TAB_ORDER.indexOf(tab);
+                      setTab(SOURCE_TAB_ORDER[(i - 1 + SOURCE_TAB_ORDER.length) % SOURCE_TAB_ORDER.length]);
                     }}
                   >
                     ←
@@ -1730,8 +1831,8 @@ export default function Home() {
                     className="btn-3d-ghost"
                     style={{ padding: "0.55rem 0.85rem" }}
                     onClick={() => {
-                      const i = TAB_ORDER.indexOf(tab);
-                      setTab(TAB_ORDER[(i + 1) % TAB_ORDER.length]);
+                      const i = SOURCE_TAB_ORDER.indexOf(tab);
+                      setTab(SOURCE_TAB_ORDER[(i + 1) % SOURCE_TAB_ORDER.length]);
                     }}
                   >
                     →

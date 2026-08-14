@@ -180,6 +180,284 @@ button {
   box-shadow: inset 3px 0 0 var(--ink);
 }
 
+.finding-card {
+  border: 1px solid var(--line);
+  background: var(--surface);
+  margin-bottom: 0.75rem;
+  box-shadow: 0 2px 0 #d0cec6;
+}
+
+.finding-card.is-open {
+  border-color: var(--ink);
+  box-shadow: 0 3px 0 #2a2a2a;
+}
+
+.finding-card-btn {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 112px 1fr;
+  gap: 0.85rem;
+  text-align: left;
+  border: none;
+  background: transparent;
+  padding: 0.65rem;
+  cursor: pointer;
+  color: inherit;
+}
+
+.finding-thumb {
+  width: 112px;
+  height: 84px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  background: #eceae3;
+}
+
+.finding-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.finding-thumb-empty {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  font-family: var(--font-display);
+  font-size: 1.4rem;
+  color: var(--muted);
+}
+
+.finding-thumb-empty img {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+}
+
+.finding-body h3 {
+  margin: 0.35rem 0 0;
+  font-family: var(--font-display);
+  font-size: clamp(1.05rem, 2vw, 1.35rem);
+  font-weight: 500;
+  line-height: 1.3;
+}
+
+.finding-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.66rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  align-items: center;
+}
+
+.inline-favicon {
+  width: 12px;
+  height: 12px;
+  margin-right: 0.35rem;
+  vertical-align: -1px;
+}
+
+.finding-expand {
+  padding: 0 0.75rem 1rem;
+  border-top: 1px solid var(--line);
+}
+
+.finding-hero {
+  display: block;
+  width: 100%;
+  max-height: 240px;
+  object-fit: cover;
+  margin: 0.85rem 0 0;
+  border: 1px solid var(--line);
+}
+
+.finding-submeta {
+  margin: 0.75rem 0 0;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.finding-content {
+  margin: 0.65rem 0 0;
+  font-size: 0.95rem;
+  line-height: 1.7;
+  color: var(--ink-soft);
+  max-width: 40rem;
+}
+
+.finding-open {
+  display: inline-block;
+  margin-top: 0.85rem;
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--ink);
+  text-decoration: none;
+}
+
+.viz-block {
+  margin: 0 0 1.5rem;
+}
+
+.viz-label {
+  margin: 0 0 0.65rem;
+  font-size: 0.66rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.viz-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1.25rem;
+  margin-bottom: 1.5rem;
+}
+
+.score-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.score-bar-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(80px, 1.2fr) 2.5rem;
+  gap: 0.45rem;
+  align-items: center;
+}
+
+.score-bar-name {
+  font-size: 0.72rem;
+  color: var(--ink-soft);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.score-bar-track {
+  height: 7px;
+  background: var(--line);
+  overflow: hidden;
+}
+
+.score-bar-fill {
+  height: 100%;
+  background: var(--ink);
+}
+
+.score-bar-val {
+  font-size: 0.72rem;
+  text-align: right;
+  color: var(--muted);
+}
+
+.news-timeline {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.timeline-card {
+  display: grid;
+  grid-template-columns: 72px 1fr;
+  gap: 0.75rem;
+  text-decoration: none;
+  border: 1px solid var(--line);
+  padding: 0.45rem;
+  background: var(--surface);
+  transition: border-color 0.1s ease;
+}
+
+.timeline-card:hover {
+  border-color: var(--ink);
+}
+
+.timeline-thumb {
+  width: 72px;
+  height: 54px;
+  overflow: hidden;
+  background: #eceae3;
+  border: 1px solid var(--line);
+  display: grid;
+  place-items: center;
+}
+
+.timeline-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.timeline-favicon {
+  width: 22px !important;
+  height: 22px !important;
+  object-fit: contain !important;
+}
+
+.timeline-placeholder {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: repeating-linear-gradient(
+    -45deg,
+    #e4e2da,
+    #e4e2da 4px,
+    #eceae3 4px,
+    #eceae3 8px
+  );
+}
+
+.timeline-date {
+  margin: 0;
+  font-size: 0.66rem;
+  color: var(--muted);
+  letter-spacing: 0.06em;
+}
+
+.timeline-title {
+  margin: 0.25rem 0 0;
+  font-size: 0.9rem;
+  line-height: 1.35;
+  color: var(--ink);
+  font-family: var(--font-display);
+}
+
+.source-card-visual {
+  padding: 0.65rem 0.65rem 1.1rem;
+}
+
+.source-card-cover {
+  height: 110px;
+  border: 1px solid var(--line);
+  background: #eceae3;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  font-family: var(--font-display);
+  color: var(--muted);
+}
+
+.source-card-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+@media (max-width: 640px) {
+  .finding-card-btn {
+    grid-template-columns: 80px 1fr;
+  }
+  .finding-thumb {
+    width: 80px;
+    height: 64px;
+  }
+}
+
 /* --- 3D press buttons (short, snappy — no laggy easing) --- */
 .btn-3d {
   position: relative;
@@ -596,6 +874,79 @@ button {
   padding-bottom: 1rem;
   border-bottom: 1px solid var(--line);
 }
+
+.report-cta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.25rem;
+  flex-wrap: wrap;
+  margin: 0 0 1.5rem;
+  padding: 1.35rem 1.4rem;
+  border: 2px solid var(--ink);
+  background:
+    linear-gradient(120deg, rgba(255, 255, 255, 0.92) 0%, rgba(244, 243, 239, 0.75) 100%);
+  box-shadow: 0 5px 0 #2a2a2a;
+}
+
+.report-cta.is-active {
+  background: var(--ink);
+  color: var(--paper);
+  box-shadow: 0 3px 0 #555;
+}
+
+.report-cta.is-active .report-cta-kicker,
+.report-cta.is-active .report-cta-body {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.report-cta.is-active .report-cta-btn {
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: 0 4px 0 #c4c2b8;
+}
+
+.report-cta-kicker {
+  margin: 0;
+  font-size: 0.66rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.report-cta-title {
+  margin: 0.4rem 0 0;
+  font-family: var(--font-display);
+  font-size: clamp(1.35rem, 2.8vw, 1.85rem);
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+}
+
+.report-cta-body {
+  margin: 0.45rem 0 0;
+  max-width: 36rem;
+  font-size: 0.9rem;
+  line-height: 1.55;
+  color: var(--ink-soft);
+}
+
+.report-cta-btn {
+  flex-shrink: 0;
+  min-width: 11rem;
+  padding: 1.05rem 1.6rem !important;
+  font-size: 0.78rem !important;
+}
+
+@media (max-width: 640px) {
+  .report-cta {
+    padding: 1.15rem 1rem;
+  }
+  .report-cta-btn {
+    width: 100%;
+  }
+}
+
 
 .source-mix {
   display: flex;

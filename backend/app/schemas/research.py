@@ -51,6 +51,10 @@ class ResearchItem(BaseModel):
     venue: Optional[str] = None
     citation_count: Optional[int] = None
     image_url: Optional[str] = None
+    favicon_url: Optional[str] = Field(
+        default=None,
+        description="Site favicon (real icon URL, not LLM-generated)",
+    )
 
 
 class RankedFinding(BaseModel):
