@@ -13,13 +13,12 @@ logger = logging.getLogger(__name__)
 app = FastAPI(
     title="AI Social Media Manager API",
     description=(
-        "LangGraph-first content pipeline.\n\n"
-        "**Feature 1:** `POST /api/research/tavily`\n"
-        "**Feature 2:** `POST /api/research/multi` "
-        "(Tavily + News + Papers in parallel)\n\n"
-        "Later: rate insights, write posts, human approval, publish."
+        "LangGraph research desk.\n\n"
+        "**Gather:** `POST /api/research/multi`\n"
+        "**Report on demand:** `POST /api/research/synthesize`\n"
+        "**Export:** markdown · html/pdf · json\n"
     ),
-    version="2.2.0-feature2",
+    version="3.1.0-report-ondemand",
 )
 
 app.add_middleware(

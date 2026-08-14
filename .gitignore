@@ -13,5 +13,8 @@ __pycache__/
 frontend/.next/
 frontend/node_modules/
 
+# Research disk cache
+backend/.cache/
+
 # macOS
 .DS_Store

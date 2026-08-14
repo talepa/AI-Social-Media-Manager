@@ -15,9 +15,9 @@ const instrument = Instrument_Sans({
 });
 
 export const metadata: Metadata = {
-  title: "Atelier Research — AI Social Media Manager",
+  title: "Atelier Research — topic to report",
   description:
-    "Editorial multi-source research: web, news, and academic papers via LangGraph.",
+    "Multi-source research desk: web, news, and papers synthesized into a structured briefing.",
 };
 
 export default function RootLayout({

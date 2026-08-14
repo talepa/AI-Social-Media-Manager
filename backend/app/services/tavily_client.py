@@ -41,11 +41,11 @@ def search_web(
     search_depth: str = "basic",
     include_answer: bool = True,
     time_range: Optional[str] = "month",
-) -> Tuple[List[WebResult], Optional[str]]:
+) -> Tuple[List[WebResult], Optional[str], List[str]]:
     """
     Search the web with Tavily for `topic`.
 
-    Returns (results, optional_answer_summary).
+    Returns (results, optional_answer_summary, image_urls).
     """
     topic = (topic or "").strip()
     if not topic:
@@ -71,6 +71,7 @@ def search_web(
         "max_results": limit,
         "search_depth": search_depth,
         "include_answer": include_answer,
+        "include_images": True,
         "topic": "general",
     }
     if time_range:
@@ -90,12 +91,16 @@ def search_web(
         if not title and not url:
             continue
         score = item.get("score")
+        image = item.get("image") or item.get("img_src") or item.get("thumbnail")
+        if isinstance(image, dict):
+            image = image.get("url") or image.get("src")
         results.append(
             WebResult(
                 title=title or url,
                 url=url,
                 content=(item.get("content") or "").strip(),
                 score=float(score) if score is not None else None,
+                image_url=(str(image).strip() if image else None) or None,
             )
         )
 
@@ -105,4 +110,14 @@ def search_web(
     else:
         answer = None
 
-    return results, answer
+    raw_images = response.get("images") or []
+    image_urls: List[str] = []
+    for img in raw_images:
+        if isinstance(img, str) and img.strip():
+            image_urls.append(img.strip())
+        elif isinstance(img, dict):
+            u = img.get("url") or img.get("src")
+            if u:
+                image_urls.append(str(u).strip())
+
+    return results, answer, image_urls[:12]

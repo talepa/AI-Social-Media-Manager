@@ -2,16 +2,21 @@
 
 /**
  * Interactive research product UI:
- * Hero → Research studio → Loader → Categorised results
+ * Hero → Research studio → Loader → Report + sources
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  downloadReportJson,
+  downloadReportMarkdown,
+  openReportPrintPdf,
+} from "../lib/reportDownload";
 
 const API_BASE = "http://localhost:8001";
 
 type View = "hero" | "studio" | "loading" | "results";
 type SourceKey = "tavily" | "news" | "papers";
-type TabKey = "overview" | SourceKey;
+type TabKey = "report" | "overview" | SourceKey;
 
 interface ResearchItem {
   title: string;
@@ -25,13 +30,73 @@ interface ResearchItem {
   citation_count: number | null;
 }
 
+interface RankedFinding {
+  rank: number;
+  title: string;
+  summary: string;
+  why_it_matters: string;
+  source_urls: string[];
+  source_types: SourceKey[];
+  image_url?: string | null;
+}
+
+interface NewsHighlight {
+  headline: string;
+  summary: string;
+  url: string;
+  published: string | null;
+  image_url?: string | null;
+}
+
+interface AcademicInsight {
+  title: string;
+  summary: string;
+  url: string;
+  authors: string[] | null;
+  venue: string | null;
+  citation_count: number | null;
+}
+
+interface ReportSource {
+  title: string;
+  url: string;
+  source: SourceKey;
+  note: string | null;
+  image_url?: string | null;
+}
+
+interface ReportStats {
+  web: number;
+  news: number;
+  papers: number;
+  total: number;
+}
+
+interface ResearchReport {
+  topic: string;
+  executive_summary: string;
+  key_findings: RankedFinding[];
+  news_highlights: NewsHighlight[];
+  academic_context: AcademicInsight[];
+  open_questions: string[];
+  sources: ReportSource[];
+  media_urls: string[];
+  stats: ReportStats | null;
+  mode: "compile" | "llm";
+}
+
 interface MultiSourceResearchResult {
   topic: string;
   tavily_results: ResearchItem[];
   news_results: ResearchItem[];
   papers_results: ResearchItem[];
   tavily_answer: string | null;
+  media_urls: string[];
   errors: Record<string, string>;
+  report: ResearchReport | null;
+  report_error: string | null;
+  cached?: boolean;
+  cache_key?: string | null;
   fetched_at: string;
 }
 
@@ -66,15 +131,15 @@ const CAPABILITIES = [
   },
   {
     title: "Read the news",
-    body: "Surface what’s trending today so your posts stay timely.",
+    body: "Surface what’s trending today so the report stays timely.",
   },
   {
     title: "Scan articles & papers",
     body: "Ground ideas in journalism and academic sources, not guesses.",
   },
   {
-    title: "Write for social",
-    body: "Turn findings into platform-ready posts — coming next in the pipeline.",
+    title: "Get a full report",
+    body: "Executive summary, ranked findings, gaps, and a source list.",
   },
 ] as const;
 
@@ -92,12 +157,366 @@ const EXAMPLE_TOPICS = [
   "Remote work productivity research",
 ];
 
+const TAB_ORDER: TabKey[] = ["report", "overview", "tavily", "news", "papers"];
+
 function hostnameOf(url: string): string {
   try {
     return new URL(url).hostname.replace(/^www\./, "");
   } catch {
     return url;
   }
+}
+
+function ReportSection({
+  index,
+  title,
+  children,
+}: {
+  index: string;
+  title: string;
+  children: ReactNode;
+}) {
+  return (
+    <section style={{ marginBottom: "2.5rem" }}>
+      <p
+        style={{
+          margin: 0,
+          fontSize: "0.66rem",
+          letterSpacing: "0.16em",
+          textTransform: "uppercase",
+          color: "var(--muted)",
+        }}
+      >
+        {index}
+      </p>
+      <h3
+        style={{
+          margin: "0.35rem 0 1rem",
+          fontFamily: "var(--font-display)",
+          fontSize: "clamp(1.55rem, 3vw, 1.95rem)",
+          fontWeight: 500,
+          letterSpacing: "-0.02em",
+        }}
+      >
+        {title}
+      </h3>
+      <div className="rule-grow" style={{ height: 1, background: "var(--ink)", marginBottom: "1.15rem" }} />
+      {children}
+    </section>
+  );
+}
+
+function SourceMixChart({ stats }: { stats: ReportStats }) {
+  const max = Math.max(stats.web, stats.news, stats.papers, 1);
+  const rows = [
+    ["Web", stats.web],
+    ["News", stats.news],
+    ["Papers", stats.papers],
+  ] as const;
+  return (
+    <div className="source-mix" aria-label="Source mix">
+      {rows.map(([label, value]) => (
+        <div key={label} className="source-mix-row">
+          <span className="source-mix-label">{label}</span>
+          <div className="source-mix-track">
+            <div
+              className="source-mix-fill"
+              style={{ width: `${Math.round((value / max) * 100)}%` }}
+            />
+          </div>
+          <span className="source-mix-val">{value}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ResearchReportView({
+  report,
+  reportError,
+  onDownloadMd,
+  onDownloadJson,
+  onDownloadPdf,
+  downloading,
+}: {
+  report: ResearchReport;
+  reportError: string | null;
+  onDownloadMd: () => void;
+  onDownloadJson: () => void;
+  onDownloadPdf: () => void;
+  downloading: boolean;
+}) {
+  return (
+    <article className="rise">
+      <div className="report-toolbar">
+        <p style={{ margin: 0, fontSize: "0.72rem", color: "var(--muted)", letterSpacing: "0.08em", textTransform: "uppercase" }}>
+          Mode · {report.mode === "llm" ? "AI enhanced" : "Compiled"}
+          {reportError ? " · fallback" : ""}
+        </p>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
+          <button type="button" className="btn-3d-ghost" style={{ padding: "0.55rem 0.85rem" }} disabled={downloading} onClick={onDownloadMd}>
+            Markdown
+          </button>
+          <button type="button" className="btn-3d-ghost" style={{ padding: "0.55rem 0.85rem" }} disabled={downloading} onClick={onDownloadJson}>
+            JSON
+          </button>
+          <button type="button" className="btn-3d" style={{ padding: "0.55rem 0.85rem" }} disabled={downloading} onClick={onDownloadPdf}>
+            PDF / Print
+          </button>
+        </div>
+      </div>
+
+      {reportError && (
+        <p
+          style={{
+            margin: "0 0 1.25rem",
+            color: "var(--warn)",
+            fontSize: "0.85rem",
+            borderLeft: "2px solid var(--warn)",
+            paddingLeft: "0.75rem",
+          }}
+        >
+          AI enhance had an issue — showing the compiled briefing instead.
+        </p>
+      )}
+
+      {report.stats && (
+        <ReportSection index="00" title="Source mix">
+          <SourceMixChart stats={report.stats} />
+        </ReportSection>
+      )}
+
+      <ReportSection index="01" title="Executive summary">
+        {report.executive_summary.split(/\n\n+/).map((para, i) => (
+          <p
+            key={i}
+            style={{
+              margin: i === 0 ? 0 : "1rem 0 0",
+              fontSize: "1.05rem",
+              lineHeight: 1.7,
+              color: "var(--ink-soft)",
+              maxWidth: "42rem",
+            }}
+          >
+            {para}
+          </p>
+        ))}
+      </ReportSection>
+
+      <ReportSection index="02" title="Key findings">
+        <ol style={{ listStyle: "none", margin: 0, padding: 0 }}>
+          {report.key_findings.map((f) => (
+            <li
+              key={`${f.rank}-${f.title}`}
+              style={{
+                padding: "1.15rem 0",
+                borderBottom: "1px solid var(--line)",
+              }}
+            >
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: "0.66rem",
+                  letterSpacing: "0.14em",
+                  textTransform: "uppercase",
+                  color: "var(--muted)",
+                }}
+              >
+                Finding {String(f.rank).padStart(2, "0")}
+                {f.source_types?.length ? ` · ${f.source_types.join(" · ")}` : ""}
+              </p>
+              <p
+                style={{
+                  margin: "0.4rem 0 0",
+                  fontFamily: "var(--font-display)",
+                  fontSize: "1.35rem",
+                  fontWeight: 500,
+                  lineHeight: 1.25,
+                }}
+              >
+                {f.title}
+              </p>
+              {f.image_url ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={f.image_url} alt="" className="report-fig" />
+              ) : null}
+              <p style={{ margin: "0.55rem 0 0", lineHeight: 1.65, color: "var(--ink-soft)", maxWidth: "40rem" }}>
+                {f.summary}
+              </p>
+              {f.why_it_matters ? (
+                <p style={{ margin: "0.45rem 0 0", fontSize: "0.88rem", color: "var(--muted)" }}>
+                  Why it matters: {f.why_it_matters}
+                </p>
+              ) : null}
+              {f.source_urls?.length > 0 && (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "0.65rem", marginTop: "0.7rem" }}>
+                  {f.source_urls.map((u) => (
+                    <a
+                      key={u}
+                      href={u}
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{
+                        fontSize: "0.7rem",
+                        letterSpacing: "0.08em",
+                        textTransform: "uppercase",
+                        borderBottom: "1px solid var(--ink)",
+                        textDecoration: "none",
+                      }}
+                    >
+                      {hostnameOf(u)}
+                    </a>
+                  ))}
+                </div>
+              )}
+            </li>
+          ))}
+        </ol>
+      </ReportSection>
+
+      <ReportSection index="03" title="What’s new / in the news">
+        {report.news_highlights.length === 0 ? (
+          <p style={{ color: "var(--muted)" }}>No news highlights in this run.</p>
+        ) : (
+          <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
+            {report.news_highlights.map((n) => (
+              <li
+                key={n.url}
+                style={{
+                  padding: "1rem 0",
+                  borderBottom: "1px solid var(--line)",
+                }}
+              >
+                {n.image_url ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={n.image_url} alt="" className="report-fig" />
+                ) : null}
+                <a
+                  href={n.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{
+                    fontFamily: "var(--font-display)",
+                    fontSize: "1.2rem",
+                    fontWeight: 500,
+                    textDecoration: "none",
+                  }}
+                >
+                  {n.headline}
+                </a>
+                {n.published ? (
+                  <p style={{ margin: "0.3rem 0 0", fontSize: "0.72rem", color: "var(--muted)" }}>
+                    {n.published}
+                  </p>
+                ) : null}
+                <p style={{ margin: "0.45rem 0 0", color: "var(--ink-soft)", lineHeight: 1.6, maxWidth: "40rem" }}>
+                  {n.summary}
+                </p>
+              </li>
+            ))}
+          </ul>
+        )}
+      </ReportSection>
+
+      <ReportSection index="04" title="Academic / deeper context">
+        {report.academic_context.length === 0 ? (
+          <p style={{ color: "var(--muted)" }}>No academic sources in this run.</p>
+        ) : (
+          <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
+            {report.academic_context.map((a) => (
+              <li
+                key={a.url}
+                style={{
+                  padding: "1rem 0",
+                  borderBottom: "1px solid var(--line)",
+                }}
+              >
+                <a
+                  href={a.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{
+                    fontFamily: "var(--font-display)",
+                    fontSize: "1.2rem",
+                    fontWeight: 500,
+                    textDecoration: "none",
+                  }}
+                >
+                  {a.title}
+                </a>
+                <p style={{ margin: "0.35rem 0 0", fontSize: "0.75rem", color: "var(--muted)" }}>
+                  {[a.authors?.slice(0, 3).join(", "), a.venue, a.citation_count != null ? `${a.citation_count} citations` : null]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </p>
+                <p style={{ margin: "0.45rem 0 0", color: "var(--ink-soft)", lineHeight: 1.6, maxWidth: "40rem" }}>
+                  {a.summary}
+                </p>
+              </li>
+            ))}
+          </ul>
+        )}
+      </ReportSection>
+
+      <ReportSection index="05" title="Open questions / gaps">
+        <ul style={{ margin: 0, paddingLeft: "1.1rem", color: "var(--ink-soft)", lineHeight: 1.7 }}>
+          {report.open_questions.map((q) => (
+            <li key={q} style={{ marginBottom: "0.45rem" }}>
+              {q}
+            </li>
+          ))}
+        </ul>
+      </ReportSection>
+
+      {report.media_urls?.length > 0 && (
+        <ReportSection index="05b" title="Figures & previews">
+          <div className="media-gallery">
+            {report.media_urls.map((url) => (
+              <a key={url} href={url} target="_blank" rel="noreferrer" className="media-tile">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={url} alt="" loading="lazy" />
+              </a>
+            ))}
+          </div>
+        </ReportSection>
+      )}
+
+      <ReportSection index="06" title="Sources">
+        <ol style={{ listStyle: "none", margin: 0, padding: 0 }}>
+          {report.sources.map((s, i) => (
+            <li
+              key={`${s.url}-${i}`}
+              style={{
+                display: "grid",
+                gridTemplateColumns: "2.2rem 1fr",
+                gap: "0.5rem",
+                padding: "0.7rem 0",
+                borderBottom: "1px solid var(--line)",
+              }}
+            >
+              <span style={{ color: "var(--muted)", fontSize: "0.75rem" }}>
+                {String(i + 1).padStart(2, "0")}
+              </span>
+              <div>
+                <a
+                  href={s.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{ textDecoration: "none", borderBottom: "1px solid var(--ink)" }}
+                >
+                  {s.title}
+                </a>
+                <p style={{ margin: "0.25rem 0 0", fontSize: "0.72rem", color: "var(--muted)" }}>
+                  {s.source} · {hostnameOf(s.url)}
+                  {s.note ? ` — ${s.note}` : ""}
+                </p>
+              </div>
+            </li>
+          ))}
+        </ol>
+      </ReportSection>
+    </article>
+  );
 }
 
 function Finding({ item, index }: { item: ResearchItem; index: number }) {
@@ -323,6 +742,10 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<MultiSourceResearchResult | null>(null);
   const [tab, setTab] = useState<TabKey>("overview");
+  const [useLlm, setUseLlm] = useState(false);
+  const [reportBusy, setReportBusy] = useState(false);
+  const [downloadBusy, setDownloadBusy] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -340,42 +763,46 @@ export default function Home() {
     if (view !== "loading") return;
     setLoadStage(0);
     const timers = [
-      window.setTimeout(() => setLoadStage(1), 700),
-      window.setTimeout(() => setLoadStage(2), 1400),
-      window.setTimeout(() => setLoadStage(3), 2100),
+      window.setTimeout(() => setLoadStage(1), 800),
+      window.setTimeout(() => setLoadStage(2), 1600),
+      window.setTimeout(() => setLoadStage(3), 2800),
     ];
     return () => timers.forEach(clearTimeout);
   }, [view]);
 
   useEffect(() => {
     if (view !== "results" || !result) return;
-    const order: TabKey[] = ["overview", "tavily", "news", "papers"];
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
-      const i = order.indexOf(tab);
+      const i = TAB_ORDER.indexOf(tab);
       if (i < 0) return;
       e.preventDefault();
       const next =
         e.key === "ArrowRight"
-          ? order[(i + 1) % order.length]
-          : order[(i - 1 + order.length) % order.length];
+          ? TAB_ORDER[(i + 1) % TAB_ORDER.length]
+          : TAB_ORDER[(i - 1 + TAB_ORDER.length) % TAB_ORDER.length];
       setTab(next);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [view, result, tab]);
 
-  const runResearch = async () => {
+  const runResearch = async (forceRefresh = false) => {
     if (!topic.trim()) return;
     setView("loading");
     setError(null);
     setResult(null);
     setTab("overview");
+    setExportError(null);
     try {
       const res = await fetch(`${API_BASE}/api/research/multi`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ topic: topic.trim(), limit }),
+        body: JSON.stringify({
+          topic: topic.trim(),
+          limit,
+          force_refresh: forceRefresh,
+        }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -393,6 +820,69 @@ export default function Home() {
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unknown error");
       setView("studio");
+    }
+  };
+
+  const generateReport = async (forceRefresh = false) => {
+    if (!result) return;
+    setReportBusy(true);
+    setExportError(null);
+    setTab("report");
+    try {
+      const res = await fetch(`${API_BASE}/api/research/synthesize`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          topic: result.topic,
+          tavily_results: result.tavily_results,
+          news_results: result.news_results,
+          papers_results: result.papers_results,
+          tavily_answer: result.tavily_answer,
+          media_urls: result.media_urls || [],
+          use_llm: useLlm,
+          force_refresh: forceRefresh,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        const detail = data.detail;
+        throw new Error(
+          typeof detail === "string"
+            ? detail
+            : typeof detail === "object"
+              ? JSON.stringify(detail)
+              : `Request failed (${res.status})`,
+        );
+      }
+      const next = data as MultiSourceResearchResult;
+      setResult({
+        ...result,
+        report: next.report,
+        report_error: next.report_error,
+        media_urls: next.media_urls?.length ? next.media_urls : result.media_urls,
+        cached: next.cached,
+        cache_key: next.cache_key,
+      });
+    } catch (e) {
+      setExportError(e instanceof Error ? e.message : "Report failed");
+    } finally {
+      setReportBusy(false);
+    }
+  };
+
+  const handleDownload = async (kind: "md" | "json" | "pdf") => {
+    if (!result?.report) return;
+    setDownloadBusy(true);
+    setExportError(null);
+    try {
+      const payload = result.report as unknown as Record<string, unknown>;
+      if (kind === "md") await downloadReportMarkdown(payload, result.topic);
+      else if (kind === "json") await downloadReportJson(payload, result.topic);
+      else await openReportPrintPdf(payload);
+    } catch (e) {
+      setExportError(e instanceof Error ? e.message : "Download failed");
+    } finally {
+      setDownloadBusy(false);
     }
   };
 
@@ -515,8 +1005,7 @@ export default function Home() {
                 }}
               >
                 One brief pulls live web pages, headlines, and academic papers —
-                then stacks them into a dossier you can browse by category before
-                you write.
+                then writes a full research report you can browse and cite.
               </p>
               <div style={{ display: "flex", gap: "0.85rem", marginTop: "2.25rem", flexWrap: "wrap" }}>
                 <button type="button" className="btn-3d" onClick={() => setView("studio")}>
@@ -720,7 +1209,7 @@ export default function Home() {
             What should we look into?
           </h1>
           <p style={{ margin: "1rem 0 0", color: "var(--ink-soft)", lineHeight: 1.6, maxWidth: "30rem" }}>
-            We’ll search the web, pull news, and scan papers — then open your dossier by category.
+            We’ll search the web, pull news, and scan papers. Generate a downloadable report when you’re ready.
           </p>
 
           <label
@@ -741,7 +1230,7 @@ export default function Home() {
             id="topic"
             value={topic}
             onChange={(e) => setTopic(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && runResearch()}
+            onKeyDown={(e) => e.key === "Enter" && void runResearch()}
             placeholder="AI for founders automate tasks"
             style={{
               width: "100%",
@@ -823,7 +1312,7 @@ export default function Home() {
                 type="button"
                 className="btn-3d"
                 disabled={!topic.trim()}
-                onClick={runResearch}
+                onClick={() => runResearch()}
               >
                 Start research
               </button>
@@ -901,7 +1390,8 @@ export default function Home() {
                   color: "var(--muted)",
                 }}
               >
-                Dossier · {totals.all} findings
+                Dossier · report + {totals.all} sources
+                {result.cached ? " · cached" : ""}
               </p>
               <h2
                 style={{
@@ -917,19 +1407,44 @@ export default function Home() {
                 {result.topic}
               </h2>
             </div>
-            <button
-              type="button"
-              className="btn-3d-ghost"
-              style={{ padding: "0.75rem 1.1rem" }}
-              onClick={() => setView("studio")}
-            >
-              New research
-            </button>
+            <div style={{ display: "flex", gap: "0.55rem", flexWrap: "wrap" }}>
+              <button
+                type="button"
+                className="btn-3d-ghost"
+                style={{ padding: "0.75rem 1.1rem" }}
+                onClick={() => setView("studio")}
+              >
+                New research
+              </button>
+              <button
+                type="button"
+                className="btn-3d-ghost"
+                style={{ padding: "0.75rem 1.1rem" }}
+                title="Bypass cache and fetch fresh sources"
+                onClick={() => {
+                  setTopic(result.topic);
+                  void runResearch(true);
+                }}
+              >
+                Refresh sources
+              </button>
+              {!result.report && (
+                <button
+                  type="button"
+                  className="btn-3d"
+                  style={{ padding: "0.75rem 1.1rem" }}
+                  onClick={() => setTab("report")}
+                >
+                  Generate report
+                </button>
+              )}
+            </div>
           </div>
 
-          <nav className="cat-rail" aria-label="Categories">
+          <nav className="cat-rail cat-rail-5" aria-label="Categories">
             {(
               [
+                ["report", "Report", result.report ? 1 : 0, 1],
                 ["overview", "Overview", totals.all, totals.all],
                 ["tavily", "Web", totals.web, totals.all],
                 ["news", "News", totals.news, totals.all],
@@ -955,10 +1470,10 @@ export default function Home() {
                     >
                       {label}
                     </span>
-                    <span className="count">{count}</span>
+                    <span className="count">{key === "report" ? (result.report ? "●" : "–") : count}</span>
                   </div>
                   <div className="cat-meter" aria-hidden>
-                    <span style={{ width: `${pct}%` }} />
+                    <span style={{ width: `${key === "report" ? (result.report ? 100 : 0) : pct}%` }} />
                   </div>
                 </button>
               );
@@ -971,8 +1486,99 @@ export default function Home() {
               color: "var(--muted)",
             }}
           >
-            Click a category · ← → keys to switch
+            Report first · source stacks · ← → keys
           </p>
+
+          {tab === "report" && (
+            <div key="report">
+              {!result.report && !reportBusy && (
+                <div
+                  className="rise"
+                  style={{
+                    border: "1px solid var(--ink)",
+                    padding: "1.75rem 1.35rem",
+                    background: "var(--surface)",
+                    boxShadow: "0 4px 0 #2a2a2a",
+                    marginBottom: "1.5rem",
+                  }}
+                >
+                  <p
+                    style={{
+                      margin: 0,
+                      fontFamily: "var(--font-display)",
+                      fontSize: "1.6rem",
+                      fontWeight: 500,
+                    }}
+                  >
+                    Build your report
+                  </p>
+                  <p style={{ margin: "0.65rem 0 0", color: "var(--ink-soft)", lineHeight: 1.6, maxWidth: "36rem" }}>
+                    Compile a briefing from the sources you already gathered — summary,
+                    ranked findings, news, papers, gaps, and downloads. Optional AI rewrite
+                    uses Gemini.
+                  </p>
+                  <label
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "0.55rem",
+                      marginTop: "1.25rem",
+                      fontSize: "0.85rem",
+                      color: "var(--ink-soft)",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={useLlm}
+                      onChange={(e) => setUseLlm(e.target.checked)}
+                    />
+                    Enhance with AI (Gemini)
+                  </label>
+                  <div style={{ marginTop: "1.35rem", display: "flex", gap: "0.65rem", flexWrap: "wrap" }}>
+                    <button type="button" className="btn-3d" onClick={() => generateReport(false)}>
+                      Generate report
+                    </button>
+                    {result.report && (
+                      <button
+                        type="button"
+                        className="btn-3d-ghost"
+                        onClick={() => generateReport(true)}
+                      >
+                        Regenerate
+                      </button>
+                    )}
+                  </div>
+                  {exportError && (
+                    <p style={{ marginTop: "1rem", color: "var(--warn)" }}>{exportError}</p>
+                  )}
+                </div>
+              )}
+
+              {reportBusy && (
+                <div style={{ padding: "2.5rem 0", textAlign: "center" }}>
+                  <div className="loader-ring" style={{ margin: "0 auto 1rem" }} />
+                  <p style={{ fontFamily: "var(--font-display)", fontSize: "1.5rem", margin: 0 }}>
+                    {useLlm ? "Writing report with Gemini…" : "Compiling report…"}
+                  </p>
+                </div>
+              )}
+
+              {result.report && !reportBusy && (
+                <ResearchReportView
+                  report={result.report}
+                  reportError={result.report_error}
+                  onDownloadMd={() => handleDownload("md")}
+                  onDownloadJson={() => handleDownload("json")}
+                  onDownloadPdf={() => handleDownload("pdf")}
+                  downloading={downloadBusy}
+                />
+              )}
+              {exportError && result.report && (
+                <p style={{ marginTop: "1rem", color: "var(--warn)" }}>{exportError}</p>
+              )}
+            </div>
+          )}
 
           {tab === "overview" && (
             <div className="rise" key="overview">
@@ -1072,7 +1678,7 @@ export default function Home() {
             </div>
           )}
 
-          {tab !== "overview" && (
+          {tab !== "overview" && tab !== "report" && (
             <div className="rise" key={tab}>
               <header
                 style={{
@@ -1113,9 +1719,8 @@ export default function Home() {
                     className="btn-3d-ghost"
                     style={{ padding: "0.55rem 0.85rem" }}
                     onClick={() => {
-                      const order: TabKey[] = ["overview", "tavily", "news", "papers"];
-                      const i = order.indexOf(tab);
-                      setTab(order[(i - 1 + order.length) % order.length]);
+                      const i = TAB_ORDER.indexOf(tab);
+                      setTab(TAB_ORDER[(i - 1 + TAB_ORDER.length) % TAB_ORDER.length]);
                     }}
                   >
                     ←
@@ -1125,9 +1730,8 @@ export default function Home() {
                     className="btn-3d-ghost"
                     style={{ padding: "0.55rem 0.85rem" }}
                     onClick={() => {
-                      const order: TabKey[] = ["overview", "tavily", "news", "papers"];
-                      const i = order.indexOf(tab);
-                      setTab(order[(i + 1) % order.length]);
+                      const i = TAB_ORDER.indexOf(tab);
+                      setTab(TAB_ORDER[(i + 1) % TAB_ORDER.length]);
                     }}
                   >
                     →

@@ -60,11 +60,18 @@ def search_news(topic: str, limit: int = 8) -> List[ResearchItem]:
         if not title:
             continue
 
-        # Strip crude HTML from description if present
+        # Strip crude HTML from description if present; capture first image if any
         content = description
+        image_url = None
         if "<" in content:
             try:
-                content = "".join(ET.fromstring(f"<div>{description}</div>").itertext())
+                wrapped = ET.fromstring(f"<div>{description}</div>")
+                content = "".join(wrapped.itertext())
+                for img in wrapped.iter("img"):
+                    src = (img.get("src") or "").strip()
+                    if src.startswith("http"):
+                        image_url = src
+                        break
             except ET.ParseError:
                 content = description
 
@@ -78,6 +85,7 @@ def search_news(topic: str, limit: int = 8) -> List[ResearchItem]:
                 content=content[:500],
                 source="news",
                 published=pub_date,
+                image_url=image_url,
             )
         )
         if len(items) >= limit:

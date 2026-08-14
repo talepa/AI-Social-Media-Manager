@@ -1,8 +1,8 @@
 """
 app/config.py
 
-Centralized configuration. Gemini is optional until later features need an LLM.
-Feature 1 (Tavily) does not require GOOGLE_API_KEY.
+Centralized configuration.
+Tavily is required for web research. Gemini is required for report synthesis.
 """
 
 import os
@@ -11,13 +11,13 @@ from dotenv import load_dotenv
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "..", "..", ".env"))
 
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "")
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 
 
 def get_llm(temperature: float = 0.7):
     """
     Returns a Gemini LLM. Raises if GOOGLE_API_KEY is missing.
-    Used by later features (rate / plan / write), not Feature 1.
+    Used by research report synthesis (and later plan / write).
     """
     if not GOOGLE_API_KEY:
         raise EnvironmentError(

@@ -27,7 +27,7 @@ def tavily_research_node(state: TavilyResearchState) -> dict:
     topic = (state.get("topic") or "").strip()
     limit = int(state.get("limit") or 10)
     try:
-        results, answer = search_web(topic=topic, limit=limit)
+        results, answer, _images = search_web(topic=topic, limit=limit)
         return {"results": results, "answer": answer, "error": None}
     except Exception as exc:
         return {"results": [], "answer": None, "error": str(exc)}

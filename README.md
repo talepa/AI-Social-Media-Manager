@@ -1,34 +1,27 @@
 # AI Social Media Manager
 
-LangGraph-first social content pipeline. Built **feature by feature**.
+LangGraph research desk: gather sources, then build a downloadable report on demand.
 
-## Feature 2 — Multi-source research (current)
+## Flow
 
-Parallel LangGraph nodes:
+1. **Research** — `POST /api/research/multi` (web + news + papers)  
+2. **Generate report** — `POST /api/research/synthesize` (compile by default; optional Gemini)  
+3. **Download** — Markdown · JSON · PDF/Print (HTML)  
 
-1. **Tavily** — web search  
-2. **News** — Google News RSS (free)  
-3. **Papers** — Semantic Scholar (free)  
+Identical topics (normalized) are **cached on disk** for 24h by default — set `force_refresh: true` or use **Refresh sources** in the UI to bypass.
 
 ### Setup
 
-1. Get a Tavily key: https://app.tavily.com  
-2. Add to `.env`: `TAVILY_API_KEY=tvly-...`  
-3. Backend deps (once):
-
 ```bash
+# .env
+TAVILY_API_KEY=...
+GOOGLE_API_KEY=...   # only for “Enhance with AI”
+
 cd backend && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt && cd ..
-```
-
-### Run
-
-```bash
 ./run.sh
 ```
 
-- Frontend: http://localhost:3000  
-- Multi research: `POST http://localhost:8001/api/research/multi`  
-- Tavily only: `POST http://localhost:8001/api/research/tavily`  
+- App: http://localhost:3000  
 - Docs: http://localhost:8001/docs  
 
-See [LANGGRAPH.md](LANGGRAPH.md) for the workflow and roadmap.
+See [LANGGRAPH.md](LANGGRAPH.md).
