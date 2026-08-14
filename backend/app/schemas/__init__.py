@@ -1,13 +1,3 @@
-from app.schemas.research import (
-    RedditPost,
-    RedditResearchResult,
-    WebResearchResult,
-    WebResult,
-)
+from app.schemas.research import WebResearchResult, WebResult
 
-__all__ = [
-    "WebResult",
-    "WebResearchResult",
-    "RedditPost",
-    "RedditResearchResult",
-]
+__all__ = ["WebResult", "WebResearchResult"]

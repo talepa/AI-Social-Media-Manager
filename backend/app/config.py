@@ -2,7 +2,7 @@
 app/config.py
 
 Centralized configuration. Gemini is optional until later features need an LLM.
-Feature 1 (Reddit) does not require GOOGLE_API_KEY.
+Feature 1 (Tavily) does not require GOOGLE_API_KEY.
 """
 
 import os
@@ -12,10 +12,6 @@ load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "..", "..", ".en
 
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
-REDDIT_USER_AGENT = os.getenv(
-    "REDDIT_USER_AGENT",
-    "AI-Social-Media-Manager/0.1 (dev; Feature1 Reddit research)",
-)
 
 
 def get_llm(temperature: float = 0.7):

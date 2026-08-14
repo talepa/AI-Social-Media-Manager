@@ -86,9 +86,8 @@ Stop.
 Implement:
 
 -   Tavily tool
--   Google Trends abstraction
--   Reddit abstraction
 -   News abstraction
+-   Academic / web search abstractions
 
 Use tool calling.
 

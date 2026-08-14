@@ -1,7 +1,7 @@
 """
 schemas/research.py
 
-Pydantic models for Feature 1 research results (Tavily web + optional Reddit).
+Pydantic models for Feature 1 research results (Tavily web).
 """
 
 from datetime import datetime, timezone
@@ -28,33 +28,6 @@ class WebResearchResult(BaseModel):
         default=None,
         description="Optional short Tavily answer summary",
     )
-    fetched_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc),
-    )
-    error: Optional[str] = None
-
-
-class RedditPost(BaseModel):
-    title: str = Field(..., description="Post title")
-    subreddit: str = Field(..., description="Subreddit name without r/ prefix")
-    score: int = Field(..., description="Net upvotes")
-    num_comments: int = Field(..., description="Comment count")
-    url: str = Field(..., description="Link target (post or external)")
-    permalink: str = Field(..., description="Full Reddit permalink URL")
-    selftext_excerpt: str = Field(
-        default="",
-        description="Truncated post body for text posts",
-    )
-    created_utc: Optional[float] = Field(
-        default=None,
-        description="Unix timestamp when the post was created",
-    )
-
-
-class RedditResearchResult(BaseModel):
-    topic: str
-    source: Literal["reddit"] = "reddit"
-    posts: List[RedditPost] = Field(default_factory=list)
     fetched_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc),
     )

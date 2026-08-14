@@ -2,7 +2,6 @@
 api/research.py
 
 Feature 1 API: Tavily web research via LangGraph.
-Optional Reddit endpoint kept for later if OAuth is approved.
 """
 
 from fastapi import APIRouter, HTTPException

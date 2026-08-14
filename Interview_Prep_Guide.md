@@ -91,7 +91,7 @@ async def health_check():
 ### Concept 1: Tool Abstraction (`@tool`)
 **What it is:** Using the `@tool` decorator in LangChain to wrap standard Python functions so that an LLM can understand and invoke them.
 **Why use it here?**
-- LLMs only know information up to their training cutoff. By wrapping APIs (like Tavily, Google Trends, Reddit, News) as tools, we give the Research Agent live internet access to gather current trends.
+- LLMs only know information up to their training cutoff. By wrapping APIs (like Tavily, News, academic search) as tools, we give the Research Agent live internet access to gather current trends.
 - The docstring of the function becomes the instruction manual for the LLM on *when* and *how* to use the tool.
 
 ### Concept 2: Structured Output (Pydantic Models)

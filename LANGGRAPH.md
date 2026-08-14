@@ -24,11 +24,10 @@ User topic
 TAVILY_API_KEY=tvly-...
 ```
 
-3. Install deps and run backend:
+3. Install deps and run:
 
 ```bash
-cd backend && .venv/bin/pip install -r requirements.txt
-../run.sh
+./run.sh
 ```
 
 ### Test
@@ -41,9 +40,7 @@ curl -s -X POST http://localhost:8001/api/research/tavily \
 
 Or open the Next.js UI and click **Run web research**.
 
-Gemini / Reddit keys are **not** required for Feature 1.
-
-Reddit client code remains in the repo for later (OAuth gated by Reddit policy), but Feature 1 primary path is Tavily.
+Gemini is **not** required for Feature 1.
 
 ---
 
@@ -61,7 +58,7 @@ Reddit client code remains in the repo for later (OAuth gated by Reddit policy),
 | # | Feature | Graph |
 |---|---|---|
 | 1 | Tavily web research | `START → tavily → END` (done) |
-| 2 | Extra sources (news / optional Reddit) | parallel nodes |
+| 2 | Extra sources (news / papers) | parallel nodes |
 | 3 | Merge + rate insights | join + rater |
 | 4 | Planner | plan node |
 | 5 | Writer | writer node |
