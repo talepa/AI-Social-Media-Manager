@@ -25,7 +25,7 @@ app = FastAPI(
         "- Module 4: Research Agent\n"
         "- Module 5: Planner Agent\n"
         "- Module 6: Writer Agent\n\n"
-        "Use `/api/showcase/plan` to run the full pipeline end-to-end."
+        "Use `/api/showcase/plan` to run the LangGraph pipeline (research → planner → writer)."
     ),
     version="1.6.0",
 )

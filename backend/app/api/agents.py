@@ -12,10 +12,12 @@ WHY a separate router?
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-# Import agents from Modules 4, 5, and 6
+# Isolated endpoints still call agents directly so each stage can be tested alone.
+# The showcase endpoint runs the LangGraph (research -> planner -> writer).
 from app.agents.research_agent import run_research_agent, ResearchReport
 from app.agents.planner_agent import run_planner_agent
 from app.agents.writer_agent import run_writer_agent
+from app.graphs.sample_graph import content_graph
 from app.schemas.plan import WeeklyContentPlan
 from app.schemas.content import WrittenContentBatch
 
@@ -68,6 +70,8 @@ async def agent_health():
     """
     return {
         "status": "ok",
+        "orchestrator": "langgraph",
+        "graph_nodes": ["research", "planner", "writer"],
         "modules_loaded": [
             "Module 1: Project Setup",
             "Module 2: Backend Foundation",
@@ -150,40 +154,35 @@ async def run_write(request: WriteRequest):
 @router.post(
     "/showcase/plan",
     response_model=ShowcaseResponse,
-    summary="🚀 Showcase — Full Pipeline (Modules 1-6)",
+    summary="Showcase — Full Pipeline (Modules 1-6)",
 )
 async def showcase_full_pipeline(request: ShowcaseRequest):
     """
-    **SHOWCASE ENDPOINT** — Runs the full agent pipeline from research to written content.
+    **SHOWCASE ENDPOINT** — Runs the LangGraph pipeline from research to written content.
 
-    Pipeline:
-    1. Takes a `topic` and `brand_voice` as input.
-    2. **Research Agent** (Module 4) — gathers trends, news, and insights.
-    3. **Planner Agent** (Module 5) — transforms research into a WeeklyContentPlan.
-    4. **Writer Agent** (Module 6) — writes a platform-specific post for each PostIdea.
-    5. Returns all three outputs so you can trace every transformation.
+    Pipeline (LangGraph nodes):
+    1. Takes a `topic` and `brand_voice` as graph input.
+    2. **research** — Research Agent (Module 4).
+    3. **planner** — Planner Agent (Module 5).
+    4. **writer** — Writer Agent (Module 6).
+    5. Returns all three outputs from the final graph state.
 
     Brand voice presets: 'professional', 'casual', 'witty', 'inspirational'
     """
     try:
-        # Step 1: Research Agent (Module 4)
-        research_report = run_research_agent(topic=request.topic)
+        final_state = content_graph.invoke({
+            "topic": request.topic,
+            "brand_voice": request.brand_voice,
+        })
 
-        # Step 2: Planner Agent (Module 5)
-        content_plan = run_planner_agent(research_report=research_report)
-
-        # Step 3: Writer Agent (Module 6)
-        # WHY iterate inside the agent rather than here?
-        # The writer agent owns the per-post iteration logic so the API layer
-        # stays thin. The agent can later be swapped for an async parallel version
-        # without changing this endpoint at all.
-        written_content = run_writer_agent(
-            content_plan=content_plan,
-            brand_voice=request.brand_voice,
-        )
+        research_report = final_state.get("research_report")
+        content_plan = final_state.get("content_plan")
+        written_content = final_state.get("written_content")
+        if research_report is None or content_plan is None or written_content is None:
+            raise ValueError("LangGraph finished without a complete pipeline state")
 
         return ShowcaseResponse(
-            module="Modules 1-6: Setup → Foundation → LangGraph → Research → Planner → Writer",
+            module="LangGraph: research → planner → writer",
             research_report=research_report,
             content_plan=content_plan,
             written_content=written_content,
