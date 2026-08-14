@@ -1,18 +1,24 @@
+"""
+tools/reddit.py
+
+LangChain tool wrapper around the real Reddit client.
+Feature 1 uses the client directly from the graph node; this tool is ready
+for later agent tool-calling.
+"""
+
+from typing import List
+
 from langchain_core.tools import tool
-from typing import Dict, Any, List
+
+from app.schemas.research import RedditPost
+from app.services.reddit_client import search_reddit as _search_reddit
+
 
 @tool
-def search_reddit(subreddit: str, query: str = "") -> List[Dict[str, Any]]:
+def search_reddit(topic: str, limit: int = 10) -> List[dict]:
     """
-    Search a specific subreddit for trending topics, discussions, and sentiments.
-    If query is empty, it fetches the top hot posts.
+    Search Reddit for posts related to a topic.
+    Returns titles, scores, comment counts, subreddits, and permalinks.
     """
-    # Mock implementation of PRAW (Python Reddit API Wrapper)
-    return [
-        {
-            "title": f"Top post in r/{subreddit} about {query}",
-            "score": 1500,
-            "comments": 250,
-            "url": f"https://reddit.com/r/{subreddit}/comments/mock"
-        }
-    ]
+    posts: List[RedditPost] = _search_reddit(topic=topic, limit=limit)
+    return [p.model_dump() for p in posts]

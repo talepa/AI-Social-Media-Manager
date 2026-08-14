@@ -1,59 +1,100 @@
 #!/bin/bash
 
-# run.sh — AI Social Media Manager Dev Runner
-# Starts the FastAPI backend with hot-reload so any file change
-# is automatically picked up without restarting the server manually.
+# run.sh — Start backend (FastAPI :8001) and frontend (Next.js :3000) together.
+# Ctrl+C stops both.
 
-set -e  # Exit immediately if any command fails
+set -e
 
 PROJECT_ROOT="$(cd "$(dirname "$0")" && pwd)"
 BACKEND_DIR="$PROJECT_ROOT/backend"
+FRONTEND_DIR="$PROJECT_ROOT/frontend"
 VENV_PYTHON="$BACKEND_DIR/.venv/bin/python"
 VENV_UVICORN="$BACKEND_DIR/.venv/bin/uvicorn"
 
+BACKEND_PID=""
+FRONTEND_PID=""
+
+cleanup() {
+  echo ""
+  echo "Stopping servers..."
+  if [ -n "$FRONTEND_PID" ] && kill -0 "$FRONTEND_PID" 2>/dev/null; then
+    kill "$FRONTEND_PID" 2>/dev/null || true
+  fi
+  if [ -n "$BACKEND_PID" ] && kill -0 "$BACKEND_PID" 2>/dev/null; then
+    kill "$BACKEND_PID" 2>/dev/null || true
+  fi
+  # Also clear anything still bound to our ports
+  for port in 8001 3000; do
+    pids=$(lsof -ti tcp:"$port" 2>/dev/null || true)
+    if [ -n "$pids" ]; then
+      kill $pids 2>/dev/null || true
+    fi
+  done
+  echo "Done."
+  exit 0
+}
+
+trap cleanup INT TERM
+
 echo ""
 echo "╔══════════════════════════════════════════════════╗"
-echo "║      AI Social Media Manager — Dev Server       ║"
+echo "║   AI Social Media Manager — Dev (both apps)    ║"
 echo "╚══════════════════════════════════════════════════╝"
 echo ""
 
-# ── Verify the virtual environment exists ──────────────────────────────────
+# ── Checks ────────────────────────────────────────────────────────────────
 if [ ! -f "$VENV_UVICORN" ]; then
-  echo "❌  Virtual environment not found at $BACKEND_DIR/.venv"
-  echo "    Run this first to set it up:"
-  echo "    cd backend && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt"
+  echo "Backend venv missing at $BACKEND_DIR/.venv"
+  echo "Run:"
+  echo "  cd backend && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt"
   exit 1
 fi
 
-echo "✅  Virtual environment found"
-echo "📦  Python : $("$VENV_PYTHON" --version)"
-echo "🌐  Backend : http://localhost:8001"
-echo "📖  API Docs: http://localhost:8001/docs"
-echo "🔄  Hot-reload is ON — save any file to apply changes instantly"
-echo ""
-
-# ── Free port 8001 if already in use ──────────────────────────────────────
-# WHY? Prevents "Address already in use" error when re-running the script
-# without manually killing the previous server process.
-EXISTING_PID=$(lsof -ti tcp:8001 2>/dev/null)
-if [ -n "$EXISTING_PID" ]; then
-  echo "⚠️   Port 8001 is in use (PID $EXISTING_PID) — killing old process..."
-  kill -9 $EXISTING_PID 2>/dev/null && sleep 1
-  echo "✅  Port 8001 is now free"
-  echo ""
+if [ ! -d "$FRONTEND_DIR/node_modules" ]; then
+  echo "Frontend node_modules missing. Installing..."
+  (cd "$FRONTEND_DIR" && npm install)
 fi
+
+if ! command -v npm >/dev/null 2>&1; then
+  echo "npm not found. Install Node.js first."
+  exit 1
+fi
+
+# ── Free ports if already in use ───────────────────────────────────────────
+for port in 8001 3000; do
+  EXISTING_PID=$(lsof -ti tcp:"$port" 2>/dev/null || true)
+  if [ -n "$EXISTING_PID" ]; then
+    echo "Port $port in use (PID $EXISTING_PID) — freeing..."
+    kill -9 $EXISTING_PID 2>/dev/null || true
+    sleep 1
+  fi
+done
+
+echo "Python  : $("$VENV_PYTHON" --version)"
+echo "Backend : http://localhost:8001"
+echo "API Docs: http://localhost:8001/docs"
+echo "Frontend: http://localhost:3000"
+echo "Hot-reload ON for both"
+echo ""
+echo "Press Ctrl+C to stop both servers"
 echo "──────────────────────────────────────────────────"
 echo ""
 
-# ── Start FastAPI with hot-reload ──────────────────────────────────────────
-# --reload        : watches for file changes and restarts automatically
-# --reload-dir    : only watch the app/ directory (avoids noise from .venv)
-# --host 0.0.0.0  : accessible on local network (not just localhost)
-# --port 8001     : our configured port
+# ── Backend ────────────────────────────────────────────────────────────────
 cd "$BACKEND_DIR"
 "$VENV_UVICORN" app.main:app \
   --host 0.0.0.0 \
   --port 8001 \
   --reload \
   --reload-dir app \
-  --log-level info
+  --log-level info &
+BACKEND_PID=$!
+
+# ── Frontend ───────────────────────────────────────────────────────────────
+cd "$FRONTEND_DIR"
+npm run dev -- --port 3000 &
+FRONTEND_PID=$!
+
+# Wait until either process exits (or Ctrl+C)
+wait $BACKEND_PID $FRONTEND_PID
+cleanup
