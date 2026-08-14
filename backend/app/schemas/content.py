@@ -16,12 +16,10 @@ from pydantic import BaseModel, Field
 
 
 class WrittenPost(BaseModel):
-    """
-    Represents a single fully-written, ready-to-publish social media post.
-
-    This is the atomic unit that flows out of the Writer Agent and into
-    the Reviewer Agent (Module 7).
-    """
+    # Represents a single fully-written, ready-to-publish social media post.
+    # 
+    # This is the atomic unit that flows out of the Writer Agent and into
+    # the Reviewer Agent (Module 7).
 
     platform: Literal["LinkedIn", "Instagram", "Twitter", "Facebook"] = Field(
         ...,
@@ -66,14 +64,12 @@ class WrittenPost(BaseModel):
 
 
 class WrittenContentBatch(BaseModel):
-    """
-    A batch of fully-written posts for the entire week.
-
-    WHY a batch model?
-    - The Reviewer Agent (Module 7) receives the ENTIRE week's content at once
-      so it can check for consistency, repetition, and brand coherence across posts.
-    - The Publisher Agent (Module 9) can then iterate over this batch to schedule each post.
-    """
+    # A batch of fully-written posts for the entire week.
+    # 
+    # WHY a batch model?
+    # - The Reviewer Agent (Module 7) receives the ENTIRE week's content at once
+    #   so it can check for consistency, repetition, and brand coherence across posts.
+    # - The Publisher Agent (Module 9) can then iterate over this batch to schedule each post.
 
     research_topic: str = Field(
         ...,

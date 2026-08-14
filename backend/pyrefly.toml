@@ -1,0 +1,13 @@
+# pyrefly.toml — Pyrefly type checker configuration
+# This file tells Pyrefly to use the project's virtual environment
+# instead of the system Python, fixing all "Cannot find module" errors.
+
+[python]
+python_interpreter = ".venv/bin/python3"
+
+[project]
+include = ["app/**/*.py"]
+exclude = [
+  "**/__pycache__/**",
+  ".venv/**",
+]

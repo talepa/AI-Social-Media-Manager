@@ -14,10 +14,8 @@ from pydantic import BaseModel, Field
 
 
 class PostIdea(BaseModel):
-    """
-    Represents a single content idea for one post on one platform.
-    This is the smallest unit of the weekly content plan.
-    """
+    # Represents a single content idea for one post on one platform.
+    # This is the smallest unit of the weekly content plan.
 
     platform: Literal["LinkedIn", "Instagram", "Twitter", "Facebook"] = Field(
         ...,
@@ -44,13 +42,11 @@ class PostIdea(BaseModel):
 
 
 class WeeklyContentPlan(BaseModel):
-    """
-    Represents a full week of planned social media content.
-
-    WHY: Encapsulating all post ideas in one model keeps the data pipeline
-    clean — the Planner Agent returns ONE object, which the Writer Agent
-    then iterates over to generate each individual post.
-    """
+    # Represents a full week of planned social media content.
+    # 
+    # WHY: Encapsulating all post ideas in one model keeps the data pipeline
+    # clean — the Planner Agent returns ONE object, which the Writer Agent
+    # then iterates over to generate each individual post.
 
     research_topic: str = Field(
         ...,

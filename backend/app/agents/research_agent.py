@@ -23,10 +23,8 @@ from app.tools.news import fetch_news
 # 1. Structured Output Schema
 # ==========================================
 class ResearchReport(BaseModel):
-    """
-    Pydantic model defining the expected structured output from the Research Agent.
-    This ensures Gemini returns data in a predictable format for the Planner Agent.
-    """
+    # Pydantic model defining the expected structured output from the Research Agent.
+    # This ensures Gemini returns data in a predictable format for the Planner Agent.
     topic: str = Field(..., description="The main topic being researched")
     key_trends: List[str] = Field(..., description="Top 3-5 trends currently popular related to the topic")
     audience_sentiment: str = Field(..., description="Overall sentiment of the target audience on social media")
@@ -78,19 +76,16 @@ Be specific, insightful, and actionable. Avoid generic observations.
 # 4. Agent Runner
 # ==========================================
 def run_research_agent(topic: str) -> ResearchReport:
-    """
-    Executes the Research Agent using Google Gemini.
-
-    Uses Gemini's structured output feature to enforce the ResearchReport schema.
-    The LLM cannot return plain prose — it must return validated JSON matching
-    the Pydantic model, which Pydantic then validates automatically.
-
-    Args:
-        topic: The topic/niche to research.
-
-    Returns:
-        A validated ResearchReport Pydantic model.
-    """
+    # Executes the Research Agent using Google Gemini.
+    # Uses Gemini's structured output feature to enforce the ResearchReport schema.
+    # The LLM cannot return plain prose — it must return validated JSON matching
+    # the Pydantic model, which Pydantic then validates automatically.
+    # 
+    # Args:
+    #     topic: The topic/niche to research.
+    # 
+    # Returns:
+    #     A validated ResearchReport Pydantic model.
     # Temperature 0.3 for research — we want factual, consistent output
     llm = get_llm(temperature=0.3)
 

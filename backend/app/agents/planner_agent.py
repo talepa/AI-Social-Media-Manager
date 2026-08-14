@@ -65,19 +65,17 @@ Now create a detailed weekly content plan with 5 posts (Mon–Fri).
 # 2. Agent Runner
 # ==========================================
 def run_planner_agent(research_report: ResearchReport) -> WeeklyContentPlan:
-    """
-    Executes the Planner Agent using Google Gemini.
-
-    Takes a ResearchReport and produces a WeeklyContentPlan with structured,
-    validated post ideas. Gemini's structured output enforces the Pydantic schema —
-    if any field is missing or the wrong type, it raises a validation error immediately.
-
-    Args:
-        research_report: A ResearchReport instance from the Research Agent.
-
-    Returns:
-        A validated WeeklyContentPlan Pydantic model.
-    """
+    # Executes the Planner Agent using Google Gemini.
+    # 
+    # Takes a ResearchReport and produces a WeeklyContentPlan with structured,
+    # validated post ideas. Gemini's structured output enforces the Pydantic schema —
+    # if any field is missing or the wrong type, it raises a validation error immediately.
+    # 
+    # Args:
+    #     research_report: A ResearchReport instance from the Research Agent.
+    # 
+    # Returns:
+    #     A validated WeeklyContentPlan Pydantic model.
     # Temperature 0.5 — balanced: creative enough for good ideas, consistent for structure
     llm = get_llm(temperature=0.5)
     structured_llm = llm.with_structured_output(WeeklyContentPlan)

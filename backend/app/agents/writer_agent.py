@@ -129,13 +129,11 @@ def _write_single_post(
     brand_voice: str,
     target_audience: str,
 ) -> WrittenPost:
-    """
-    Writes a single social media post for one PostIdea using Gemini.
-
-    WHY a private helper?
-    The public run_writer_agent handles the batch loop. Isolating per-post
-    logic here makes it independently testable and easier to parallelise later.
-    """
+    # Writes a single social media post for one PostIdea using Gemini.
+    # 
+    # WHY a private helper?
+    # The public run_writer_agent handles the batch loop. Isolating per-post
+    # logic here makes it independently testable and easier to parallelise later.
     voice_description = BRAND_VOICE_PRESETS.get(
         brand_voice.lower(),
         brand_voice,  # If not a preset key, use the raw string as voice description
@@ -166,24 +164,22 @@ def run_writer_agent(
     content_plan: WeeklyContentPlan,
     brand_voice: str = "professional",
 ) -> WrittenContentBatch:
-    """
-    Executes the Writer Agent for an entire week's content plan.
-
-    Iterates over every PostIdea in the plan and calls Gemini once per post
-    to generate platform-specific, brand-voice-consistent content.
-
-    WHY one LLM call per post (not one call for all)?
-    Each post needs its own platform-specific context. Sending all posts in
-    one prompt risks Gemini mixing formats (e.g. writing LinkedIn-length text
-    for a Twitter post). One call per post = clean, correct output every time.
-
-    Args:
-        content_plan:  A WeeklyContentPlan from the Planner Agent.
-        brand_voice:   Voice preset key or custom description string.
-
-    Returns:
-        A WrittenContentBatch with one WrittenPost per PostIdea.
-    """
+    # Executes the Writer Agent for an entire week's content plan.
+    # 
+    # Iterates over every PostIdea in the plan and calls Gemini once per post
+    # to generate platform-specific, brand-voice-consistent content.
+    # 
+    # WHY one LLM call per post (not one call for all)?
+    # Each post needs its own platform-specific context. Sending all posts in
+    # one prompt risks Gemini mixing formats (e.g. writing LinkedIn-length text
+    # for a Twitter post). One call per post = clean, correct output every time.
+    # 
+    # Args:
+    #     content_plan:  A WeeklyContentPlan from the Planner Agent.
+    #     brand_voice:   Voice preset key or custom description string.
+    # 
+    # Returns:
+    #     A WrittenContentBatch with one WrittenPost per PostIdea.
     written_posts: List[WrittenPost] = []
 
     for post_idea in content_plan.post_ideas:
