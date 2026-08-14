@@ -280,7 +280,7 @@ function ResearchReportView({
             paddingLeft: "0.75rem",
           }}
         >
-          AI enhance had an issue — showing the compiled briefing instead.
+          AI enhance had an issue — showing the compiled report instead.
         </p>
       )}
 
@@ -1137,55 +1137,95 @@ export default function Home() {
         <span className="app-cursor-ring" />
         <span className="app-cursor-dot" />
       </div>
-      {/* Persistent brand strip */}
-      <header
-        style={{
-          position: "relative",
-          zIndex: 1,
-          maxWidth: 1080,
-          margin: "0 auto",
-          padding: "1.35rem clamp(1.25rem, 4vw, 2rem)",
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-        }}
-      >
-        <button
-          type="button"
-          onClick={() => {
-            setView("hero");
-            setError(null);
-          }}
-          style={{
-            border: "none",
-            background: "transparent",
-            padding: 0,
-            cursor: "pointer",
-            fontFamily: "var(--font-display)",
-            fontSize: "1.55rem",
-            fontWeight: 500,
-            letterSpacing: "-0.02em",
-            color: "var(--ink)",
-          }}
-        >
-          Atelier
-        </button>
-        <div style={{ display: "flex", gap: "0.75rem", alignItems: "center" }}>
-          {view !== "hero" && view !== "loading" && (
+      {/* Persistent navbar */}
+      <header className="site-header">
+        <div className="site-header-inner">
+          <button
+            type="button"
+            className="site-brand"
+            onClick={() => {
+              setView("hero");
+              setError(null);
+            }}
+          >
+            Atelier
+          </button>
+
+          <nav className="site-nav" aria-label="Primary">
             <button
               type="button"
-              className="btn-3d-ghost"
-              style={{ padding: "0.7rem 1rem" }}
-              onClick={() => setView("hero")}
+              className={`site-nav-link${view === "hero" ? " is-active" : ""}`}
+              onClick={() => {
+                setView("hero");
+                setError(null);
+              }}
             >
               Home
             </button>
-          )}
-          {view === "hero" && (
-            <button type="button" className="btn-3d" onClick={() => setView("studio")}>
+            <button
+              type="button"
+              className="site-nav-link"
+              onClick={() => {
+                setView("hero");
+                window.setTimeout(() => {
+                  document.getElementById("how-it-works")?.scrollIntoView({
+                    behavior: "smooth",
+                  });
+                }, 40);
+              }}
+            >
+              How it works
+            </button>
+            <button
+              type="button"
+              className="site-nav-link"
+              onClick={() => {
+                setView("hero");
+                window.setTimeout(() => {
+                  document.getElementById("capabilities")?.scrollIntoView({
+                    behavior: "smooth",
+                  });
+                }, 40);
+              }}
+            >
+              Sources
+            </button>
+            <button
+              type="button"
+              className={`site-nav-link${view === "studio" ? " is-active" : ""}`}
+              onClick={() => setView("studio")}
+            >
+              Studio
+            </button>
+            {view === "results" && (
+              <button
+                type="button"
+                className="site-nav-link is-active"
+                onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+              >
+                Results
+              </button>
+            )}
+          </nav>
+
+          <div className="site-header-actions">
+            {view !== "hero" && view !== "loading" && view !== "studio" && (
+              <button
+                type="button"
+                className="btn-3d-ghost site-header-btn"
+                onClick={() => setView("studio")}
+              >
+                New topic
+              </button>
+            )}
+            <button
+              type="button"
+              className="btn-3d site-header-btn"
+              onClick={() => setView("studio")}
+            >
               Research
             </button>
-          )}
+          </div>
         </div>
       </header>
 
@@ -1243,7 +1283,7 @@ export default function Home() {
               color: "var(--muted)",
             }}
           >
-            Brief
+            Topic
           </label>
           <input
             ref={inputRef}
@@ -1410,7 +1450,7 @@ export default function Home() {
                   color: "var(--muted)",
                 }}
               >
-                Dossier · {totals.all} sources
+                Research · {totals.all} sources
                 {result.cached ? " · cached" : ""}
               </p>
               <h2
@@ -1454,7 +1494,7 @@ export default function Home() {
           <div className={`report-cta${tab === "report" ? " is-active" : ""}`}>
             <div className="report-cta-copy">
               <p className="report-cta-kicker">
-                {result.report ? "Briefing ready" : "Next step"}
+                {result.report ? "Report ready" : "Next step"}
               </p>
               <p className="report-cta-title">
                 {result.report
@@ -1464,7 +1504,7 @@ export default function Home() {
               <p className="report-cta-body">
                 {result.report
                   ? "Summary, ranked findings, news, papers, gaps, and downloads — Markdown, JSON, or PDF."
-                  : "Turn these sources into a readable briefing with findings, visuals, and export options."}
+                  : "Turn these sources into a readable report with findings and export options."}
               </p>
             </div>
             <button
@@ -1564,7 +1604,7 @@ export default function Home() {
                     Build your report
                   </p>
                   <p style={{ margin: "0.65rem 0 0", color: "var(--ink-soft)", lineHeight: 1.6, maxWidth: "36rem" }}>
-                    Compile a briefing from the sources you already gathered — summary,
+                    Compile a report from the sources you already gathered — summary,
                     ranked findings, news, papers, gaps, and downloads. Optional AI rewrite
                     uses Gemini.
                   </p>

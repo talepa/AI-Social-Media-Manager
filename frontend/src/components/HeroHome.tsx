@@ -2,57 +2,48 @@
 
 import type { CSSProperties } from "react";
 
-const KINETIC = [
-  "Topic",
-  "Web",
-  "News",
-  "Papers",
-  "Preview",
-  "Rank",
-  "Report",
-  "Cite",
-  "Export",
-];
-
 const FLOW = [
   {
     step: "01",
-    title: "Open a brief",
-    body: "Name the topic. Atelier fans out to live web, news, and papers in one pass.",
+    title: "Enter a topic",
+    body: "Tell Atelier what you want to learn. It searches the web, news, and papers together.",
   },
   {
     step: "02",
-    title: "Read the stacks",
-    body: "Browse cards or list — real previews, scores, citations, and a news timeline.",
+    title: "Review sources",
+    body: "Browse findings as cards or a list — previews, scores, citations, and a news timeline.",
   },
   {
     step: "03",
-    title: "Compile the report",
-    body: "A structured briefing with findings, context, open questions, and sources.",
+    title: "Get the report",
+    body: "Generate a structured report with findings, context, open questions, and sources.",
   },
 ] as const;
 
-const FEATURED = [
+const INSTRUMENTS = [
   {
+    index: "01",
     label: "Web",
-    tool: "Tavily",
-    body: "Ranked pages and snippets — the desk’s first pass across the open web.",
+    tool: "Tavily Search",
+    body: "Ranked pages and snippets — the first pass across the open web.",
   },
   {
+    index: "02",
+    label: "News",
+    tool: "Google News",
+    body: "Fresh headlines linked to publisher pages so coverage stays current.",
+  },
+  {
+    index: "03",
+    label: "Papers",
+    tool: "S2 · OpenAlex · Crossref · arXiv",
+    body: "Academic results merged and deduped — abstracts, venues, citations.",
+  },
+  {
+    index: "04",
     label: "Report",
     tool: "Compile · Gemini",
-    body: "Executive summary, ranked findings, and a citeable source list on demand.",
-  },
-] as const;
-
-const SIDE_NOTES = [
-  {
-    label: "News",
-    body: "Google News wire resolved to publisher pages so the brief stays timely.",
-  },
-  {
-    label: "Papers",
-    body: "Semantic Scholar, OpenAlex, Crossref, and arXiv — merged, not duplicated.",
+    body: "Executive summary, ranked findings, and a source list you can export.",
   },
 ] as const;
 
@@ -62,7 +53,7 @@ const DELIVERABLES = [
   "News highlights",
   "Academic context",
   "Open questions",
-  "Source dossier",
+  "Source list",
   "MD · HTML · PDF",
 ];
 
@@ -88,11 +79,11 @@ export default function HeroHome({ onResearch }: { onResearch: () => void }) {
             </h1>
             <div className="hero-brand-rule" aria-hidden />
             <p className="hero-subhead rise" style={{ animationDelay: "0.1s" }}>
-              From topic to dossier
+              From topic to report
             </p>
             <p className="hero-lead rise" style={{ animationDelay: "0.14s" }}>
-              One brief gathers the live web, today’s headlines, and academic papers —
-              then shapes a report you can browse, cite, and export.
+              Search the live web, today’s headlines, and academic papers in one place —
+              then turn the results into a report you can browse, cite, and download.
             </p>
             <div className="hero-actions rise" style={{ animationDelay: "0.18s" }}>
               <button type="button" className="btn-3d" onClick={onResearch}>
@@ -139,7 +130,7 @@ export default function HeroHome({ onResearch }: { onResearch: () => void }) {
                 <span className="doc-tag">Web · Tavily</span>
                 <span className="desk-live">Live</span>
               </div>
-              <p className="desk-front-title">Topic brief → ranked sources</p>
+              <p className="desk-front-title">Topic → ranked sources</p>
               <div className="doc-line" />
               <div className="doc-line" />
               <div className="doc-line short" />
@@ -149,7 +140,7 @@ export default function HeroHome({ onResearch }: { onResearch: () => void }) {
                 <span style={{ width: "54%" }} />
                 <span style={{ width: "66%" }} />
               </div>
-              <p className="desk-front-meta">ATLAS DOSSIER · MULTI-SOURCE</p>
+              <p className="desk-front-meta">RESEARCH · MULTI-SOURCE</p>
             </div>
             <div className="desk-pins">
               <span className="pin">Web</span>
@@ -157,8 +148,8 @@ export default function HeroHome({ onResearch }: { onResearch: () => void }) {
               <span className="pin">Papers</span>
             </div>
             <div className="desk-note">
-              <p>Parallel gather</p>
-              <p>Preview enrich</p>
+              <p>Parallel search</p>
+              <p>Page previews</p>
               <p>Report on demand</p>
             </div>
           </div>
@@ -173,131 +164,99 @@ export default function HeroHome({ onResearch }: { onResearch: () => void }) {
         </div>
       </div>
 
-      {/* Full-bleed kinetic type */}
-      <div className="moving-type" aria-hidden>
-        <div className="moving-type-track moving-type-track-a">
-          {[...KINETIC, ...KINETIC].map((word, i) => (
-            <span key={`a-${word}-${i}`}>{word}</span>
-          ))}
-        </div>
-        <div className="moving-type-track moving-type-track-b">
-          {[...KINETIC].reverse().concat([...KINETIC].reverse()).map((word, i) => (
-            <span key={`b-${word}-${i}`}>{word}</span>
-          ))}
-        </div>
-      </div>
-
-      <div className="hero-inner">
-        {/* Process — editorial, not cards */}
-        <section id="how-it-works" className="hero-section">
+      <section id="how-it-works" className="section-band section-band-process">
+        <div className="hero-inner section-band-inner">
           <div className="hero-section-head">
             <p className="hero-kicker">Process</p>
-            <h2 className="hero-section-title">How a brief moves</h2>
+            <h2 className="hero-section-title">How research works</h2>
             <p className="hero-section-lead">
-              Three beats. No dashboard — just the path from empty sheet to dossier.
+              Three steps from a topic to a finished report.
             </p>
           </div>
-          <ol className="process-ladder">
+          <div className="step-card-grid">
             {FLOW.map((item, i) => (
-              <li
+              <button
                 key={item.step}
-                className="process-rung rise"
-                style={{ animationDelay: `${0.05 + i * 0.07}s` }}
+                type="button"
+                className="step-card"
+                onClick={onResearch}
+                style={{ "--float-delay": `${i * 0.35}s` } as CSSProperties}
               >
-                <span className="process-num">{item.step}</span>
-                <div className="process-copy">
-                  <h3>{item.title}</h3>
-                  <p>{item.body}</p>
+                <span className="step-card-num">{item.step}</span>
+                <h3 className="step-card-title">{item.title}</h3>
+                <p className="step-card-body">{item.body}</p>
+                <span className="step-card-cta">Start →</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section id="capabilities" className="section-band section-band-desk">
+        <div className="hero-inner section-band-inner">
+          <div className="hero-section-head">
+            <p className="hero-kicker">Sources</p>
+            <h2 className="hero-section-title">What Atelier searches</h2>
+            <p className="hero-section-lead">
+              Four tools on the desk — tap any card to start researching.
+            </p>
+          </div>
+          <div className="feature-card-grid feature-card-grid-4">
+            {INSTRUMENTS.map((item, i) => (
+              <button
+                key={item.label}
+                type="button"
+                className="feature-card feature-card-tall"
+                onClick={onResearch}
+                style={{ "--float-delay": `${0.15 + i * 0.28}s` } as CSSProperties}
+              >
+                <div className="feature-card-top">
+                  <span className="feature-card-index">{item.index}</span>
+                  <span className="feature-card-badge">{item.tool}</span>
                 </div>
+                <h3 className="feature-card-title">{item.label}</h3>
+                <p className="feature-card-body">{item.body}</p>
+                <span className="feature-card-cta">Research →</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="section-band section-band-report" aria-label="Report contents">
+        <div className="hero-inner section-band-inner">
+          <div className="hero-section-head">
+            <p className="hero-kicker">Report</p>
+            <h2 className="hero-section-title">What’s in the report</h2>
+            <p className="hero-section-lead">
+              Fast compile by default, or enhance with Gemini when you want a sharper pass.
+            </p>
+          </div>
+          <ul className="deliver-chip-grid">
+            {DELIVERABLES.map((item, i) => (
+              <li
+                key={item}
+                className="deliver-chip"
+                style={{ "--float-delay": `${i * 0.18}s` } as CSSProperties}
+              >
+                {item}
               </li>
             ))}
-          </ol>
-        </section>
-
-        {/* Instruments — only two animated cards + text notes */}
-        <section id="capabilities" className="hero-section">
-          <div className="hero-section-head">
-            <p className="hero-kicker">Instruments</p>
-            <h2 className="hero-section-title">What’s on the desk</h2>
-            <p className="hero-section-lead">
-              Two focal tools as floating cards. The rest of the desk as quiet notes.
-            </p>
+          </ul>
+          <div className="section-band-cta">
+            <button type="button" className="btn-3d" onClick={onResearch}>
+              Start research
+            </button>
           </div>
-
-          <div className="feature-mix">
-            <div className="feature-card-grid feature-card-grid-2">
-              {FEATURED.map((item, i) => (
-                <button
-                  key={item.label}
-                  type="button"
-                  className="feature-card feature-card-tall"
-                  onClick={onResearch}
-                  style={{ "--float-delay": `${i * 0.4}s` } as CSSProperties}
-                >
-                  <div className="feature-card-top">
-                    <span className="feature-card-index">
-                      {String(i + 1).padStart(2, "0")}
-                    </span>
-                    <span className="feature-card-badge">{item.tool}</span>
-                  </div>
-                  <h3 className="feature-card-title">{item.label}</h3>
-                  <p className="feature-card-body">{item.body}</p>
-                  <span className="feature-card-cta">Open brief →</span>
-                </button>
-              ))}
-            </div>
-
-            <div className="side-notes">
-              {SIDE_NOTES.map((note) => (
-                <button
-                  key={note.label}
-                  type="button"
-                  className="side-note"
-                  onClick={onResearch}
-                >
-                  <span className="side-note-label">{note.label}</span>
-                  <span className="side-note-body">{note.body}</span>
-                  <span className="side-note-go" aria-hidden>
-                    →
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
-        </section>
-      </div>
-
-      {/* Moving type for deliverables */}
-      <section className="type-band" aria-label="Report contents">
-        <div className="type-band-inner">
-          <p className="hero-kicker">Inside the report</p>
-          <p className="type-band-title">What leaves the desk</p>
-        </div>
-        <div className="moving-type moving-type-dense" aria-hidden>
-          <div className="moving-type-track moving-type-track-a">
-            {[...DELIVERABLES, ...DELIVERABLES].map((word, i) => (
-              <span key={`d1-${word}-${i}`}>{word}</span>
-            ))}
-          </div>
-          <div className="moving-type-track moving-type-track-b">
-            {[...DELIVERABLES].reverse().concat([...DELIVERABLES].reverse()).map((word, i) => (
-              <span key={`d2-${word}-${i}`}>{word}</span>
-            ))}
-          </div>
-        </div>
-        <div className="type-band-inner type-band-cta">
-          <button type="button" className="btn-3d" onClick={onResearch}>
-            Start research
-          </button>
         </div>
       </section>
 
       <div className="hero-inner">
         <div className="hero-footer-cta">
           <div>
-            <p className="hero-footer-title">Clear the desk. Start a brief.</p>
+            <p className="hero-footer-title">Ready to research?</p>
             <p className="hero-footer-body">
-              Research → stacks → report when you’re ready.
+              Search sources first, then generate the report when you need it.
             </p>
           </div>
           <button type="button" className="btn-3d" onClick={onResearch}>
