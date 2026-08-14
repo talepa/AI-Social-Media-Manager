@@ -902,14 +902,8 @@ export default function Home() {
       pending = false;
       const w = Math.max(window.innerWidth, 1);
       const h = Math.max(window.innerHeight, 1);
-      const x = (mx / w) * 100;
-      const y = (my / h) * 100;
       const nx = mx / w - 0.5;
       const ny = my / h - 0.5;
-      root.style.setProperty("--bg-x", `${x.toFixed(2)}%`);
-      root.style.setProperty("--bg-y", `${y.toFixed(2)}%`);
-      root.style.setProperty("--bg-ox", `${(nx * 28).toFixed(1)}px`);
-      root.style.setProperty("--bg-oy", `${(ny * 18).toFixed(1)}px`);
       root.style.setProperty("--tilt-x", `${(-ny * 3.5).toFixed(2)}deg`);
       root.style.setProperty("--tilt-y", `${(nx * 4.5).toFixed(2)}deg`);
       const cur = cursorRef.current;
@@ -1134,7 +1128,7 @@ export default function Home() {
 
   return (
     <div style={{ minHeight: "100vh", position: "relative" }}>
-      <div className="bg-follow" aria-hidden />
+      <div className="bg-grain" aria-hidden />
       <div
         ref={cursorRef}
         className={`app-cursor${cursorOn ? " is-on" : ""}`}
