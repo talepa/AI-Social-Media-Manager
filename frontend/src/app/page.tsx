@@ -1311,6 +1311,20 @@ export default function Home() {
             </button>
             <button
               type="button"
+              className="site-nav-link"
+              onClick={() => {
+                setView("hero");
+                window.setTimeout(() => {
+                  document.getElementById("report")?.scrollIntoView({
+                    behavior: "smooth",
+                  });
+                }, 40);
+              }}
+            >
+              Report
+            </button>
+            <button
+              type="button"
               className={`site-nav-link${view === "studio" ? " is-active" : ""}`}
               onClick={() => setView("studio")}
             >
@@ -1352,18 +1366,7 @@ export default function Home() {
 
       {/* STUDIO — open research sheet */}
       {view === "studio" && (
-        <main
-          className="sheet-up"
-          style={{
-            maxWidth: 720,
-            margin: "0 auto",
-            padding: "1rem clamp(1.25rem, 4vw, 2rem) 4rem",
-            minHeight: "75vh",
-            display: "flex",
-            flexDirection: "column",
-            justifyContent: "center",
-          }}
-        >
+        <main className="sheet-up studio-shell">
           <p
             style={{
               margin: 0,
