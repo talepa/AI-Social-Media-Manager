@@ -58,8 +58,25 @@ def _digest(parts: list[str]) -> str:
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
-def multi_cache_key(topic: str, limit: int) -> str:
-    return _digest(["multi", "v4-previews", normalize_topic(topic), str(int(limit))])
+def multi_cache_key(
+    topic: str,
+    limit: int,
+    *,
+    category: str | None = None,
+    sources: list[str] | None = None,
+) -> str:
+    cat = (category or "general").strip().lower()
+    src = ",".join(sorted(s.strip().lower() for s in (sources or []) if s))
+    return _digest(
+        [
+            "multi",
+            "v5-categories",
+            normalize_topic(topic),
+            str(int(limit)),
+            cat,
+            src,
+        ]
+    )
 
 
 def synthesize_cache_key(
@@ -69,12 +86,20 @@ def synthesize_cache_key(
     tavily_urls: list[str],
     news_urls: list[str],
     papers_urls: list[str],
+    github_urls: list[str] | None = None,
 ) -> str:
-    urls = sorted({*(tavily_urls or []), *(news_urls or []), *(papers_urls or [])})
+    urls = sorted(
+        {
+            *(tavily_urls or []),
+            *(news_urls or []),
+            *(papers_urls or []),
+            *(github_urls or []),
+        }
+    )
     return _digest(
         [
             "synthesize",
-            "v1",
+            "v2",
             normalize_topic(topic),
             "llm" if use_llm else "compile",
             ",".join(urls),

@@ -6,7 +6,7 @@ const FLOW = [
   {
     step: "01",
     title: "Enter a topic",
-    body: "Tell Atelier what you want to learn. It searches the web, news, and papers together.",
+    body: "Tell Atelier what you want to learn. Choose a research type — web, news, papers, or GitHub.",
   },
   {
     step: "02",
@@ -41,6 +41,12 @@ const INSTRUMENTS = [
   },
   {
     index: "04",
+    label: "GitHub",
+    tool: "Repo search",
+    body: "For engineer-style research — starred public repos with language and topics.",
+  },
+  {
+    index: "05",
     label: "Report",
     tool: "Compile · Gemini",
     body: "Executive summary, ranked findings, and a source list you can export.",
@@ -60,6 +66,7 @@ const DELIVERABLES = [
 const MARQUEE = [
   "Tavily",
   "Google News",
+  "GitHub",
   "Semantic Scholar",
   "OpenAlex",
   "Crossref",
@@ -82,7 +89,7 @@ export default function HeroHome({ onResearch }: { onResearch: () => void }) {
               From topic to report
             </p>
             <p className="hero-lead rise" style={{ animationDelay: "0.14s" }}>
-              Search the live web, today’s headlines, and academic papers in one place —
+              Search the live web, headlines, papers, and GitHub in one place —
               then turn the results into a report you can browse, cite, and download.
             </p>
             <div className="hero-actions rise" style={{ animationDelay: "0.18s" }}>

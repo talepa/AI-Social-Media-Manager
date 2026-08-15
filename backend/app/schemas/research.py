@@ -9,6 +9,8 @@ from typing import Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
+SourceType = Literal["tavily", "news", "papers", "github"]
+
 
 class WebResult(BaseModel):
     title: str = Field(..., description="Result title")
@@ -43,12 +45,12 @@ class WebResearchResult(BaseModel):
 
 
 class ResearchItem(BaseModel):
-    """Unified item used across web / news / papers sources."""
+    """Unified item used across web / news / papers / github sources."""
 
     title: str
     url: str
     content: str = ""
-    source: Literal["tavily", "news", "papers"]
+    source: SourceType
     score: Optional[float] = None
     published: Optional[str] = None
     authors: Optional[List[str]] = None
@@ -67,9 +69,7 @@ class RankedFinding(BaseModel):
     summary: str
     why_it_matters: str = ""
     source_urls: List[str] = Field(default_factory=list)
-    source_types: List[Literal["tavily", "news", "papers"]] = Field(
-        default_factory=list,
-    )
+    source_types: List[SourceType] = Field(default_factory=list)
     image_url: Optional[str] = None
 
 
@@ -93,7 +93,7 @@ class AcademicInsight(BaseModel):
 class ReportSource(BaseModel):
     title: str
     url: str
-    source: Literal["tavily", "news", "papers"]
+    source: SourceType
     note: Optional[str] = None
     image_url: Optional[str] = None
 
@@ -102,6 +102,7 @@ class ReportStats(BaseModel):
     web: int = 0
     news: int = 0
     papers: int = 0
+    github: int = 0
     total: int = 0
 
 
@@ -128,9 +129,18 @@ class ResearchReport(BaseModel):
 
 class MultiSourceResearchResult(BaseModel):
     topic: str
+    category: Optional[str] = Field(
+        default=None,
+        description="Research category preset used for this run",
+    )
+    sources_used: List[SourceType] = Field(
+        default_factory=list,
+        description="Which source nodes were enabled for this run",
+    )
     tavily_results: List[ResearchItem] = Field(default_factory=list)
     news_results: List[ResearchItem] = Field(default_factory=list)
     papers_results: List[ResearchItem] = Field(default_factory=list)
+    github_results: List[ResearchItem] = Field(default_factory=list)
     tavily_answer: Optional[str] = None
     media_urls: List[str] = Field(
         default_factory=list,

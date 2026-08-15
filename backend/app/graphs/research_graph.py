@@ -4,9 +4,9 @@ graphs/research_graph.py
 Multi-source research + optional report synthesis.
 
 Flow:
-  START → tavily_research  ─┐
-  START → news_research    ─┼→ gather → synthesize_report → END
-  START → papers_research  ─┘
+  START → enabled sources (parallel) → gather → synthesize_report → END
+
+Sources are selected via category preset or an explicit sources list.
 """
 
 from datetime import datetime, timezone
@@ -20,6 +20,7 @@ from app.schemas.research import (
     ResearchReport,
     WebResult,
 )
+from app.services.github_client import search_github_repos
 from app.services.news_client import search_news
 from app.services.papers_client import search_papers
 from app.services.preview_client import (
@@ -28,6 +29,7 @@ from app.services.preview_client import (
     enrich_items_with_previews,
 )
 from app.services.report_synthesizer import synthesize_report
+from app.services.research_categories import resolve_sources
 from app.services.tavily_client import search_web
 
 
@@ -39,9 +41,12 @@ class MultiSourceState(TypedDict):
     topic: str
     limit: NotRequired[int]
     with_report: NotRequired[bool]
+    category: NotRequired[Optional[str]]
+    sources: NotRequired[List[str]]
     tavily_results: NotRequired[List[ResearchItem]]
     news_results: NotRequired[List[ResearchItem]]
     papers_results: NotRequired[List[ResearchItem]]
+    github_results: NotRequired[List[ResearchItem]]
     tavily_answer: NotRequired[Optional[str]]
     media_urls: NotRequired[List[str]]
     # Parallel nodes may each report an error — merge instead of overwrite
@@ -50,7 +55,14 @@ class MultiSourceState(TypedDict):
     report_error: NotRequired[Optional[str]]
 
 
+def _enabled(state: MultiSourceState, source: str) -> bool:
+    sources = state.get("sources") or []
+    return source in sources
+
+
 def tavily_node(state: MultiSourceState) -> dict:
+    if not _enabled(state, "tavily"):
+        return {"tavily_results": [], "tavily_answer": None}
     topic = (state.get("topic") or "").strip()
     limit = int(state.get("limit") or 8)
     try:
@@ -67,7 +79,6 @@ def tavily_node(state: MultiSourceState) -> dict:
             )
             for r in results
         ]
-        # Prefer result thumbnails, then Tavily gallery images
         media = [i.image_url for i in items if i.image_url]
         for u in images:
             if u not in media:
@@ -86,6 +97,8 @@ def tavily_node(state: MultiSourceState) -> dict:
 
 
 def news_node(state: MultiSourceState) -> dict:
+    if not _enabled(state, "news"):
+        return {"news_results": []}
     topic = (state.get("topic") or "").strip()
     limit = min(int(state.get("limit") or 8), 10)
     try:
@@ -96,6 +109,8 @@ def news_node(state: MultiSourceState) -> dict:
 
 
 def papers_node(state: MultiSourceState) -> dict:
+    if not _enabled(state, "papers"):
+        return {"papers_results": []}
     topic = (state.get("topic") or "").strip()
     limit = min(int(state.get("limit") or 8), 8)
     try:
@@ -105,33 +120,49 @@ def papers_node(state: MultiSourceState) -> dict:
         return {"papers_results": [], "errors": {"papers": str(exc)}}
 
 
+def github_node(state: MultiSourceState) -> dict:
+    if not _enabled(state, "github"):
+        return {"github_results": []}
+    topic = (state.get("topic") or "").strip()
+    limit = min(int(state.get("limit") or 8), 10)
+    try:
+        items = search_github_repos(topic=topic, limit=limit)
+        return {"github_results": items}
+    except Exception as exc:
+        return {"github_results": [], "errors": {"github": str(exc)}}
+
+
 def gather_node(state: MultiSourceState) -> dict:
     """Join parallel sources, then enrich missing previews from real pages."""
     tavily = _normalize_items(state.get("tavily_results"), "tavily")
     news = _normalize_items(state.get("news_results"), "news")
     papers = _normalize_items(state.get("papers_results"), "papers")
+    github = _normalize_items(state.get("github_results"), "github")
 
-    # Prefer fetching previews for web + news (visual); papers less often have og:image
     tavily = enrich_items_with_previews(tavily, max_fetch=8)
     news = enrich_items_with_previews(news, max_fetch=8)
     papers = enrich_items_with_previews(papers, max_fetch=4)
+    # GitHub already has owner avatars — light enrich only
+    github = enrich_items_with_previews(github, max_fetch=2)
 
     media = collect_media_urls(
         tavily,
         news,
         papers,
+        github,
         extra=list(state.get("media_urls") or []),
     )
-    # Use leftover gallery images for any items still missing thumbnails
     tavily = backfill_images_from_media(tavily, media)
     news = backfill_images_from_media(news, media)
     papers = backfill_images_from_media(papers, media)
+    github = backfill_images_from_media(github, media)
 
-    media = collect_media_urls(tavily, news, papers, extra=media)
+    media = collect_media_urls(tavily, news, papers, github, extra=media)
     return {
         "tavily_results": tavily,
         "news_results": news,
         "papers_results": papers,
+        "github_results": github,
         "media_urls": media,
     }
 
@@ -145,6 +176,7 @@ def synthesize_node(state: MultiSourceState) -> dict:
         tavily_results=_normalize_items(state.get("tavily_results"), "tavily"),
         news_results=_normalize_items(state.get("news_results"), "news"),
         papers_results=_normalize_items(state.get("papers_results"), "papers"),
+        github_results=_normalize_items(state.get("github_results"), "github"),
         tavily_answer=state.get("tavily_answer"),
         errors=state.get("errors") or {},
     )
@@ -158,18 +190,19 @@ def build_research_graph():
     workflow.add_node("tavily_research", tavily_node)
     workflow.add_node("news_research", news_node)
     workflow.add_node("papers_research", papers_node)
+    workflow.add_node("github_research", github_node)
     workflow.add_node("gather", gather_node)
     workflow.add_node("synthesize_report", synthesize_node)
 
-    # Fan-out from START (LangGraph runs these in parallel)
     workflow.add_edge(START, "tavily_research")
     workflow.add_edge(START, "news_research")
     workflow.add_edge(START, "papers_research")
+    workflow.add_edge(START, "github_research")
 
-    # Fan-in to gather → synthesize → END
     workflow.add_edge("tavily_research", "gather")
     workflow.add_edge("news_research", "gather")
     workflow.add_edge("papers_research", "gather")
+    workflow.add_edge("github_research", "gather")
     workflow.add_edge("gather", "synthesize_report")
     workflow.add_edge("synthesize_report", END)
 
@@ -208,12 +241,17 @@ def run_multi_source_research(
     topic: str,
     limit: int = 8,
     with_report: bool = False,
+    category: str | None = None,
+    sources: List[str] | None = None,
 ) -> MultiSourceResearchResult:
+    resolved = resolve_sources(category=category, sources=sources)
     final = research_graph.invoke(
         {
             "topic": topic,
             "limit": limit,
             "with_report": with_report,
+            "category": category or "general",
+            "sources": list(resolved),
             "errors": {},
         }
     )
@@ -231,9 +269,12 @@ def run_multi_source_research(
 
     return MultiSourceResearchResult(
         topic=topic,
+        category=category or "general",
+        sources_used=list(resolved),
         tavily_results=_normalize_items(final.get("tavily_results"), "tavily"),
         news_results=_normalize_items(final.get("news_results"), "news"),
         papers_results=_normalize_items(final.get("papers_results"), "papers"),
+        github_results=_normalize_items(final.get("github_results"), "github"),
         tavily_answer=final.get("tavily_answer"),
         media_urls=[str(u) for u in (final.get("media_urls") or []) if u],
         errors={str(k): str(v) for k, v in errors.items()},
@@ -243,6 +284,17 @@ def run_multi_source_research(
     )
 
 
-def run_research_report(topic: str, limit: int = 8) -> MultiSourceResearchResult:
+def run_research_report(
+    topic: str,
+    limit: int = 8,
+    category: str | None = None,
+    sources: List[str] | None = None,
+) -> MultiSourceResearchResult:
     """Research sources then synthesize the structured report."""
-    return run_multi_source_research(topic=topic, limit=limit, with_report=True)
+    return run_multi_source_research(
+        topic=topic,
+        limit=limit,
+        with_report=True,
+        category=category,
+        sources=sources,
+    )

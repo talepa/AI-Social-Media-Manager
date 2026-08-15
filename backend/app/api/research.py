@@ -8,7 +8,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import HTMLResponse, PlainTextResponse, Response
 from pydantic import BaseModel, Field
 
-from app.graphs.research_graph import run_multi_source_research, run_research_report
+from app.graphs.research_graph import run_multi_source_research
 from app.graphs.tavily_graph import run_tavily_research
 from app.schemas.research import (
     MultiSourceResearchResult,
@@ -18,6 +18,12 @@ from app.schemas.research import (
 )
 from app.services.report_export import report_to_html, report_to_markdown
 from app.services.report_synthesizer import synthesize_report
+from app.services.research_categories import (
+    ALL_SOURCES,
+    CATEGORY_LABELS,
+    CATEGORY_SOURCES,
+    resolve_sources,
+)
 from app.services import research_cache
 
 router = APIRouter(prefix="/api", tags=["Research"])
@@ -26,6 +32,14 @@ router = APIRouter(prefix="/api", tags=["Research"])
 class WebResearchRequest(BaseModel):
     topic: str = Field(..., min_length=1, description="Topic to research")
     limit: int = Field(default=8, ge=1, le=20)
+    category: str | None = Field(
+        default="general",
+        description="Preset: general | ai_engineer | founder | academic | news_desk",
+    )
+    sources: list[str] | None = Field(
+        default=None,
+        description="Optional explicit source list overriding category",
+    )
     force_refresh: bool = Field(
         default=False,
         description="Bypass cache and fetch fresh sources",
@@ -37,6 +51,7 @@ class SynthesizeRequest(BaseModel):
     tavily_results: list[ResearchItem] = Field(default_factory=list)
     news_results: list[ResearchItem] = Field(default_factory=list)
     papers_results: list[ResearchItem] = Field(default_factory=list)
+    github_results: list[ResearchItem] = Field(default_factory=list)
     tavily_answer: str | None = None
     media_urls: list[str] = Field(default_factory=list)
     use_llm: bool = Field(
@@ -53,6 +68,15 @@ class ExportRequest(BaseModel):
     report: ResearchReport
 
 
+def _result_total(result: MultiSourceResearchResult) -> int:
+    return (
+        len(result.tavily_results)
+        + len(result.news_results)
+        + len(result.papers_results)
+        + len(result.github_results)
+    )
+
+
 @router.get("/health/research", summary="Research health check")
 async def research_health():
     return {
@@ -63,10 +87,13 @@ async def research_health():
             "tavily_research",
             "news_research",
             "papers_research",
+            "github_research",
             "gather",
             "synthesize_report",
         ],
-        "sources": ["tavily", "news", "papers"],
+        "sources": list(ALL_SOURCES),
+        "categories": CATEGORY_LABELS,
+        "category_sources": CATEGORY_SOURCES,
         "report": True,
         "synthesize": True,
         "exports": ["markdown", "html", "json"],
@@ -106,13 +133,21 @@ async def research_tavily(request: WebResearchRequest):
 )
 async def research_multi(request: WebResearchRequest):
     try:
-        key = research_cache.multi_cache_key(request.topic, request.limit)
+        resolved = resolve_sources(
+            category=request.category,
+            sources=request.sources,
+        )
+        key = research_cache.multi_cache_key(
+            request.topic,
+            request.limit,
+            category=request.category,
+            sources=list(resolved),
+        )
         if not request.force_refresh:
             hit = research_cache.get_cached(key, MultiSourceResearchResult)
             if hit is not None:
                 hit.cached = True
                 hit.cache_key = key
-                # Don't return a stale nested report from an older payload shape
                 hit.report = None
                 hit.report_error = None
                 return hit
@@ -121,13 +156,10 @@ async def research_multi(request: WebResearchRequest):
             topic=request.topic,
             limit=request.limit,
             with_report=False,
+            category=request.category,
+            sources=list(resolved),
         )
-        total = (
-            len(result.tavily_results)
-            + len(result.news_results)
-            + len(result.papers_results)
-        )
-        if total == 0 and result.errors:
+        if _result_total(result) == 0 and result.errors:
             raise HTTPException(
                 status_code=502,
                 detail=f"All research sources failed: {result.errors}",
@@ -135,7 +167,6 @@ async def research_multi(request: WebResearchRequest):
 
         result.cached = False
         result.cache_key = key
-        # Cache sources only (strip report if any)
         to_store = result.model_copy(deep=True)
         to_store.report = None
         to_store.report_error = None
@@ -167,15 +198,11 @@ async def research_synthesize(request: SynthesizeRequest):
             tavily_results=request.tavily_results,
             news_results=request.news_results,
             papers_results=request.papers_results,
+            github_results=request.github_results,
             tavily_answer=request.tavily_answer,
             media_urls=request.media_urls,
         )
-        total = (
-            len(partial.tavily_results)
-            + len(partial.news_results)
-            + len(partial.papers_results)
-        )
-        if total == 0:
+        if _result_total(partial) == 0:
             raise HTTPException(status_code=400, detail="No sources to synthesize")
 
         key = research_cache.synthesize_cache_key(
@@ -184,6 +211,7 @@ async def research_synthesize(request: SynthesizeRequest):
             tavily_urls=[i.url for i in partial.tavily_results],
             news_urls=[i.url for i in partial.news_results],
             papers_urls=[i.url for i in partial.papers_results],
+            github_urls=[i.url for i in partial.github_results],
         )
 
         if not request.force_refresh:
@@ -221,8 +249,16 @@ async def research_synthesize(request: SynthesizeRequest):
 )
 async def research_report(request: WebResearchRequest):
     try:
-        # Reuse multi cache when possible, then synthesize
-        multi_key = research_cache.multi_cache_key(request.topic, request.limit)
+        resolved = resolve_sources(
+            category=request.category,
+            sources=request.sources,
+        )
+        multi_key = research_cache.multi_cache_key(
+            request.topic,
+            request.limit,
+            category=request.category,
+            sources=list(resolved),
+        )
         base: MultiSourceResearchResult | None = None
         if not request.force_refresh:
             base = research_cache.get_cached(multi_key, MultiSourceResearchResult)
@@ -232,13 +268,10 @@ async def research_report(request: WebResearchRequest):
                 topic=request.topic,
                 limit=request.limit,
                 with_report=False,
+                category=request.category,
+                sources=list(resolved),
             )
-            total = (
-                len(base.tavily_results)
-                + len(base.news_results)
-                + len(base.papers_results)
-            )
-            if total == 0 and base.errors:
+            if _result_total(base) == 0 and base.errors:
                 raise HTTPException(
                     status_code=502,
                     detail=f"All research sources failed: {base.errors}",
@@ -254,6 +287,7 @@ async def research_report(request: WebResearchRequest):
             tavily_urls=[i.url for i in base.tavily_results],
             news_urls=[i.url for i in base.news_results],
             papers_urls=[i.url for i in base.papers_results],
+            github_urls=[i.url for i in base.github_results],
         )
         if not request.force_refresh:
             hit = research_cache.get_cached(synth_key, MultiSourceResearchResult)

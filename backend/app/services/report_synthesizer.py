@@ -49,6 +49,7 @@ def _collect_media(result: MultiSourceResearchResult) -> List[str]:
         *result.tavily_results,
         *result.news_results,
         *result.papers_results,
+        *result.github_results,
     ]:
         if item.image_url and item.image_url not in seen:
             seen.add(item.image_url)
@@ -60,7 +61,14 @@ def _stats(result: MultiSourceResearchResult) -> ReportStats:
     web = len(result.tavily_results)
     news = len(result.news_results)
     papers = len(result.papers_results)
-    return ReportStats(web=web, news=news, papers=papers, total=web + news + papers)
+    github = len(result.github_results)
+    return ReportStats(
+        web=web,
+        news=news,
+        papers=papers,
+        github=github,
+        total=web + news + papers + github,
+    )
 
 
 def _item_payload(item: ResearchItem) -> dict:
@@ -87,6 +95,9 @@ def _build_corpus(result: MultiSourceResearchResult) -> dict:
         "papers": [
             _item_payload(i) for i in result.papers_results[:_MAX_ITEMS_PER_SOURCE]
         ],
+        "github": [
+            _item_payload(i) for i in result.github_results[:_MAX_ITEMS_PER_SOURCE]
+        ],
         "media_urls": _collect_media(result),
         "source_errors": result.errors or {},
     }
@@ -103,6 +114,7 @@ Rank key_findings by importance (rank 1 = most important), typically 4–7 items
 You may set image_url on a finding only if that exact URL appears in the corpus.
 news_highlights should emphasize timely coverage from the news list.
 academic_context should emphasize papers / deeper evidence.
+When github repos are present, weave notable repos into key_findings (stars = citation_count).
 open_questions should list genuine gaps, contradictions, or follow-ups (3–6).
 sources should be a de-duplicated bibliography of the URLs you actually used, with short notes.
 Set mode to "llm". Leave stats null (server will fill). media_urls may copy from corpus.
@@ -119,9 +131,15 @@ def compile_report(result: MultiSourceResearchResult) -> ResearchReport:
     """Deterministic, no-LLM report from retrieved sources."""
     ranked_web = sorted(result.tavily_results, key=_rank_key, reverse=True)
     ranked_papers = sorted(result.papers_results, key=_rank_key, reverse=True)
+    ranked_github = sorted(result.github_results, key=_rank_key, reverse=True)
 
     mixed: List[ResearchItem] = []
-    for bucket in (ranked_web[:4], result.news_results[:2], ranked_papers[:2]):
+    for bucket in (
+        ranked_web[:3],
+        result.news_results[:2],
+        ranked_papers[:2],
+        ranked_github[:2],
+    ):
         for item in bucket:
             if item not in mixed:
                 mixed.append(item)
@@ -168,6 +186,7 @@ def compile_report(result: MultiSourceResearchResult) -> ResearchReport:
         *result.tavily_results,
         *result.news_results,
         *result.papers_results,
+        *result.github_results,
     ]:
         if item.url in seen:
             continue
@@ -183,27 +202,32 @@ def compile_report(result: MultiSourceResearchResult) -> ResearchReport:
         )
 
     stats = _stats(result)
+    mix_parts = [f"{stats.web} web", f"{stats.news} news", f"{stats.papers} papers"]
+    if stats.github:
+        mix_parts.append(f"{stats.github} GitHub")
     summary_bits = [
         f'This briefing compiles {stats.total} sources on “{result.topic}” '
-        f"({stats.web} web, {stats.news} news, {stats.papers} papers).",
+        f"({', '.join(mix_parts)}).",
     ]
     if result.tavily_answer:
         summary_bits.append(result.tavily_answer.strip())
     else:
         summary_bits.append(
             "Findings below are ranked from retrieved titles, snippets, scores, "
-            "and citation signals — no generative rewrite was applied."
+            "and citation / star signals — no generative rewrite was applied."
         )
 
     open_q = [
         "Which claims need primary-source verification?",
         "What recent developments are missing from this sample?",
-        "Where do web, news, and papers disagree?",
+        "Where do web, news, papers, and code disagree?",
     ]
     if stats.papers == 0:
         open_q.insert(0, "No academic papers were retrieved — is the topic too industry-specific?")
     if stats.news == 0:
         open_q.insert(0, "No news headlines matched — try a more timely framing of the topic.")
+    if not result.github_results and "github" in (result.errors or {}):
+        open_q.insert(0, "GitHub search failed — check rate limits or GITHUB_TOKEN.")
 
     return ResearchReport(
         topic=result.topic,
@@ -233,6 +257,7 @@ def synthesize_report(
         len(result.tavily_results)
         + len(result.news_results)
         + len(result.papers_results)
+        + len(result.github_results)
     )
     if total == 0:
         return None, "No sources available to synthesize a report."

@@ -17,7 +17,7 @@ const instrument = Instrument_Sans({
 export const metadata: Metadata = {
   title: "Atelier Research — topic to report",
   description:
-    "Multi-source research desk: web, news, and papers synthesized into a structured report.",
+    "Multi-source research desk: web, news, papers, and GitHub — synthesized into a structured report.",
 };
 
 export default function RootLayout({

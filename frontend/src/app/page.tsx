@@ -16,7 +16,13 @@ import {
 const API_BASE = "http://localhost:8001";
 
 type View = "hero" | "studio" | "loading" | "results";
-type SourceKey = "tavily" | "news" | "papers";
+type SourceKey = "tavily" | "news" | "papers" | "github";
+type ResearchCategory =
+  | "general"
+  | "ai_engineer"
+  | "founder"
+  | "academic"
+  | "news_desk";
 type TabKey = "report" | "overview" | SourceKey;
 type LayoutMode = "cards" | "list";
 
@@ -73,6 +79,7 @@ interface ReportStats {
   web: number;
   news: number;
   papers: number;
+  github?: number;
   total: number;
 }
 
@@ -91,9 +98,12 @@ interface ResearchReport {
 
 interface MultiSourceResearchResult {
   topic: string;
+  category?: string | null;
+  sources_used?: SourceKey[];
   tavily_results: ResearchItem[];
   news_results: ResearchItem[];
   papers_results: ResearchItem[];
+  github_results?: ResearchItem[];
   tavily_answer: string | null;
   media_urls: string[];
   errors: Record<string, string>;
@@ -126,7 +136,77 @@ const SOURCE_META: Record<
     method: "Academic libraries in parallel — merged and deduped by title/DOI.",
     index: "03",
   },
+  github: {
+    label: "GitHub",
+    tool: "GitHub Search API",
+    method: "Public repositories ranked by stars — code, tools, and reference implementations.",
+    index: "04",
+  },
 };
+
+const CATEGORIES: {
+  id: ResearchCategory;
+  label: string;
+  blurb: string;
+  sources: SourceKey[];
+  examples: string[];
+}[] = [
+  {
+    id: "general",
+    label: "General",
+    blurb: "Web, news, and papers",
+    sources: ["tavily", "news", "papers"],
+    examples: [
+      "AI agents for founders",
+      "LinkedIn thought leadership 2026",
+      "Climate tech funding news",
+    ],
+  },
+  {
+    id: "ai_engineer",
+    label: "AI Engineer",
+    blurb: "Web, papers, and GitHub repos",
+    sources: ["tavily", "papers", "github"],
+    examples: [
+      "LangGraph multi-agent orchestration",
+      "RAG evaluation benchmarks",
+      "vLLM inference optimization",
+    ],
+  },
+  {
+    id: "founder",
+    label: "Founder",
+    blurb: "Web, news, and papers",
+    sources: ["tavily", "news", "papers"],
+    examples: [
+      "B2B SaaS pricing 2026",
+      "PLG onboarding patterns",
+      "AI startup fundraising news",
+    ],
+  },
+  {
+    id: "academic",
+    label: "Academic",
+    blurb: "Papers first, then web",
+    sources: ["papers", "tavily"],
+    examples: [
+      "Transformer attention mechanisms",
+      "Diffusion model sampling",
+      "Causal inference in ML",
+    ],
+  },
+  {
+    id: "news_desk",
+    label: "News desk",
+    blurb: "News and web only",
+    sources: ["news", "tavily"],
+    examples: [
+      "OpenAI product launches",
+      "EU AI Act enforcement",
+      "Chip export controls 2026",
+    ],
+  },
+];
 
 const CAPABILITIES = [
   {
@@ -151,17 +231,17 @@ const LOAD_STAGES = [
   { label: "Scanning the web", tool: "Tavily" },
   { label: "Collecting headlines", tool: "Google News" },
   { label: "Reading papers", tool: "OpenAlex / S2" },
+  { label: "Searching GitHub", tool: "Repos" },
   { label: "Organising findings", tool: "LangGraph" },
 ];
 
-const EXAMPLE_TOPICS = [
-  "AI agents for founders",
-  "LinkedIn thought leadership 2026",
-  "Climate tech funding news",
-  "Remote work productivity research",
+const SOURCE_TAB_ORDER: TabKey[] = [
+  "overview",
+  "tavily",
+  "news",
+  "papers",
+  "github",
 ];
-
-const SOURCE_TAB_ORDER: TabKey[] = ["overview", "tavily", "news", "papers"];
 
 function hostnameOf(url: string): string {
   try {
@@ -211,12 +291,14 @@ function ReportSection({
 }
 
 function SourceMixChart({ stats }: { stats: ReportStats }) {
-  const max = Math.max(stats.web, stats.news, stats.papers, 1);
-  const rows = [
+  const github = stats.github ?? 0;
+  const max = Math.max(stats.web, stats.news, stats.papers, github, 1);
+  const rows: [string, number][] = [
     ["Web", stats.web],
     ["News", stats.news],
     ["Papers", stats.papers],
-  ] as const;
+  ];
+  if (github > 0) rows.push(["GitHub", github]);
   return (
     <div className="source-mix" aria-label="Source mix">
       {rows.map(([label, value]) => (
@@ -537,7 +619,13 @@ function ScoreBars({ items }: { items: ResearchItem[] }) {
   );
 }
 
-function CitationBars({ items }: { items: ResearchItem[] }) {
+function CitationBars({
+  items,
+  label = "Citations (papers)",
+}: {
+  items: ResearchItem[];
+  label?: string;
+}) {
   const cited = items
     .filter((i) => i.citation_count != null && i.citation_count > 0)
     .sort((a, b) => (b.citation_count ?? 0) - (a.citation_count ?? 0))
@@ -546,7 +634,7 @@ function CitationBars({ items }: { items: ResearchItem[] }) {
   const max = Math.max(...cited.map((i) => i.citation_count ?? 1), 1);
   return (
     <div className="viz-block">
-      <p className="viz-label">Citations (papers)</p>
+      <p className="viz-label">{label}</p>
       <div className="score-bars">
         {cited.map((i) => (
           <div key={i.url} className="score-bar-row" title={i.title}>
@@ -655,7 +743,7 @@ function Finding({
   layout: LayoutMode;
 }) {
   const [open, setOpen] = useState(false);
-  const meta = SOURCE_META[item.source];
+  const meta = SOURCE_META[item.source] ?? SOURCE_META.tavily;
 
   return (
     <article
@@ -874,6 +962,7 @@ export default function Home() {
   const [view, setView] = useState<View>("hero");
   const [topic, setTopic] = useState("");
   const [limit, setLimit] = useState(6);
+  const [category, setCategory] = useState<ResearchCategory>("general");
   const [loadStage, setLoadStage] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<MultiSourceResearchResult | null>(null);
@@ -972,30 +1061,48 @@ export default function Home() {
     if (view !== "loading") return;
     setLoadStage(0);
     const timers = [
-      window.setTimeout(() => setLoadStage(1), 800),
-      window.setTimeout(() => setLoadStage(2), 1600),
-      window.setTimeout(() => setLoadStage(3), 2800),
+      window.setTimeout(() => setLoadStage(1), 700),
+      window.setTimeout(() => setLoadStage(2), 1400),
+      window.setTimeout(() => setLoadStage(3), 2100),
+      window.setTimeout(() => setLoadStage(4), 3000),
     ];
     return () => timers.forEach(clearTimeout);
   }, [view]);
+
+  const resultTabOrder = useMemo(() => {
+    const used = new Set(
+      (result?.sources_used?.length
+        ? result.sources_used
+        : (["tavily", "news", "papers"] as SourceKey[])
+      ).filter(Boolean),
+    );
+    if ((result?.github_results?.length ?? 0) > 0) used.add("github");
+    if (result && result.tavily_results.length > 0) used.add("tavily");
+    if (result && result.news_results.length > 0) used.add("news");
+    if (result && result.papers_results.length > 0) used.add("papers");
+    return SOURCE_TAB_ORDER.filter(
+      (k) => k === "overview" || used.has(k as SourceKey),
+    );
+  }, [result]);
 
   useEffect(() => {
     if (view !== "results" || !result) return;
     const onKey = (e: KeyboardEvent) => {
       if (tab === "report") return;
       if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
-      const i = SOURCE_TAB_ORDER.indexOf(tab);
+      const order = resultTabOrder;
+      const i = order.indexOf(tab);
       if (i < 0) return;
       e.preventDefault();
       const next =
         e.key === "ArrowRight"
-          ? SOURCE_TAB_ORDER[(i + 1) % SOURCE_TAB_ORDER.length]
-          : SOURCE_TAB_ORDER[(i - 1 + SOURCE_TAB_ORDER.length) % SOURCE_TAB_ORDER.length];
+          ? order[(i + 1) % order.length]
+          : order[(i - 1 + order.length) % order.length];
       setTab(next);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [view, result, tab]);
+  }, [view, result, tab, resultTabOrder]);
 
   const runResearch = async (forceRefresh = false) => {
     if (!topic.trim()) return;
@@ -1011,6 +1118,7 @@ export default function Home() {
         body: JSON.stringify({
           topic: topic.trim(),
           limit,
+          category,
           force_refresh: forceRefresh,
         }),
       });
@@ -1047,6 +1155,7 @@ export default function Home() {
           tavily_results: result.tavily_results,
           news_results: result.news_results,
           papers_results: result.papers_results,
+          github_results: result.github_results || [],
           tavily_answer: result.tavily_answer,
           media_urls: result.media_urls || [],
           use_llm: useLlm,
@@ -1098,22 +1207,31 @@ export default function Home() {
 
   const totals = useMemo(() => {
     if (!result) return null;
+    const github = result.github_results?.length ?? 0;
     return {
       web: result.tavily_results.length,
       news: result.news_results.length,
       papers: result.papers_results.length,
+      github,
       all:
         result.tavily_results.length +
         result.news_results.length +
-        result.papers_results.length,
+        result.papers_results.length +
+        github,
     };
   }, [result]);
+
+  const activeCategory = useMemo(
+    () => CATEGORIES.find((c) => c.id === category) ?? CATEGORIES[0],
+    [category],
+  );
 
   const activeItems: ResearchItem[] = useMemo(() => {
     if (!result) return [];
     if (tab === "tavily") return result.tavily_results;
     if (tab === "news") return result.news_results;
     if (tab === "papers") return result.papers_results;
+    if (tab === "github") return result.github_results || [];
     return [];
   }, [result, tab]);
 
@@ -1123,6 +1241,7 @@ export default function Home() {
       ...result.tavily_results,
       ...result.news_results,
       ...result.papers_results,
+      ...(result.github_results || []),
     ];
   }, [result]);
 
@@ -1269,14 +1388,44 @@ export default function Home() {
             What should we look into?
           </h1>
           <p style={{ margin: "1rem 0 0", color: "var(--ink-soft)", lineHeight: 1.6, maxWidth: "30rem" }}>
-            We’ll search the web, pull news, and scan papers. Generate a downloadable report when you’re ready.
+            Pick a research type — we’ll pull the right mix of web, news, papers, and GitHub. Generate a report when you’re ready.
           </p>
+
+          <div style={{ marginTop: "2rem" }}>
+            <p
+              style={{
+                margin: "0 0 0.65rem",
+                fontSize: "0.66rem",
+                letterSpacing: "0.14em",
+                textTransform: "uppercase",
+                color: "var(--muted)",
+              }}
+            >
+              Research type
+            </p>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
+              {CATEGORIES.map((c) => (
+                <button
+                  key={c.id}
+                  type="button"
+                  className={`chip${category === c.id ? " is-active" : ""}`}
+                  onClick={() => setCategory(c.id)}
+                  title={c.blurb}
+                >
+                  {c.label}
+                </button>
+              ))}
+            </div>
+            <p style={{ margin: "0.75rem 0 0", fontSize: "0.85rem", color: "var(--ink-soft)" }}>
+              {activeCategory.blurb}
+            </p>
+          </div>
 
           <label
             htmlFor="topic"
             style={{
               display: "block",
-              marginTop: "2.5rem",
+              marginTop: "2rem",
               fontSize: "0.68rem",
               letterSpacing: "0.16em",
               textTransform: "uppercase",
@@ -1320,7 +1469,7 @@ export default function Home() {
               Try an example
             </p>
             <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
-              {EXAMPLE_TOPICS.map((ex) => (
+              {activeCategory.examples.map((ex) => (
                 <button
                   key={ex}
                   type="button"
@@ -1395,14 +1544,14 @@ export default function Home() {
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(3, 1fr)",
+              gridTemplateColumns: `repeat(${Math.min(activeCategory.sources.length, 4)}, 1fr)`,
               gap: "0.75rem",
               marginTop: "3rem",
               borderTop: "1px solid var(--line)",
               paddingTop: "1.5rem",
             }}
           >
-            {(Object.keys(SOURCE_META) as SourceKey[]).map((key) => (
+            {activeCategory.sources.map((key) => (
               <div key={key}>
                 <p style={{ margin: 0, fontFamily: "var(--font-display)", fontSize: "1.2rem" }}>
                   {SOURCE_META[key].label}
@@ -1524,13 +1673,17 @@ export default function Home() {
           <nav className="cat-rail" aria-label="Categories">
             {(
               [
-                ["overview", "Overview", totals.all, totals.all],
-                ["tavily", "Web", totals.web, totals.all],
-                ["news", "News", totals.news, totals.all],
-                ["papers", "Papers", totals.papers, totals.all],
+                ["overview", "Overview", totals.all],
+                ["tavily", "Web", totals.web],
+                ["news", "News", totals.news],
+                ["papers", "Papers", totals.papers],
+                ["github", "GitHub", totals.github],
               ] as const
-            ).map(([key, label, count, max]) => {
-              const pct = max > 0 ? Math.max(8, Math.round((count / max) * 100)) : 0;
+            )
+              .filter(([key]) => resultTabOrder.includes(key))
+              .map(([key, label, count]) => {
+              const pct =
+                totals.all > 0 ? Math.max(8, Math.round((count / totals.all) * 100)) : 0;
               return (
                 <button
                   key={key}
@@ -1715,11 +1868,16 @@ export default function Home() {
                     web: totals.web,
                     news: totals.news,
                     papers: totals.papers,
+                    github: totals.github,
                     total: totals.all,
                   }}
                 />
                 <ScoreBars items={result.tavily_results} />
                 <CitationBars items={result.papers_results} />
+                <CitationBars
+                  items={result.github_results || []}
+                  label="Stars (GitHub)"
+                />
               </div>
 
               <p style={{ margin: "1.5rem 0 1.15rem", color: "var(--ink-soft)", lineHeight: 1.6 }}>
@@ -1737,8 +1895,11 @@ export default function Home() {
                     ["tavily", totals.web, result.tavily_results],
                     ["news", totals.news, result.news_results],
                     ["papers", totals.papers, result.papers_results],
+                    ["github", totals.github, result.github_results || []],
                   ] as const
-                ).map(([key, count, items]) => {
+                )
+                  .filter(([key]) => resultTabOrder.includes(key))
+                  .map(([key, count, items]) => {
                   const m = SOURCE_META[key];
                   const cover = items.find((it) => it.image_url)?.image_url;
                   return (
