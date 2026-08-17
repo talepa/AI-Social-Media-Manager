@@ -1,20 +1,21 @@
 @import "tailwindcss";
+@import "../styles/brutal.css";
 
 :root {
-  --paper: #f3efe8;
-  --ink: #12141a;
-  --ink-soft: #3a3d45;
-  --muted: #6b6e76;
-  --line: #d4d0c8;
-  --line-strong: #12141a;
-  --surface: rgba(250, 248, 244, 0.88);
-  --warn: #8a4b2e;
-  --desk: #e6dfd4;
-  --mesh-cream: #f7f2ea;
-  --mesh-slate: #5c6b7a;
-  --mesh-navy: #2f3d4f;
-  --mesh-terra: #c47a55;
-  --mesh-clay: #a86548;
+  --paper: #fff4e6;
+  --ink: #111111;
+  --ink-soft: #444444;
+  --muted: #444444;
+  --line: #111111;
+  --line-strong: #111111;
+  --surface: #ffffff;
+  --warn: #ff6b6b;
+  --desk: #ffe066;
+  --mesh-cream: #fff4e6;
+  --mesh-slate: #6c9bff;
+  --mesh-navy: #111111;
+  --mesh-terra: #ff6b6b;
+  --mesh-clay: #ff6b6b;
   --font-display: var(--font-bodoni), "Times New Roman", serif;
   --font-body: var(--font-instrument), "Helvetica Neue", sans-serif;
   --tilt-x: 0deg;
@@ -32,59 +33,10 @@ body {
   color: var(--ink);
   font-family: var(--font-body);
   min-height: 100%;
-  background-color: var(--mesh-cream);
+  background-color: #fff4e6;
   background-image:
-    /* faint desk grid */
-    linear-gradient(rgba(18, 20, 26, 0.028) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(18, 20, 26, 0.028) 1px, transparent 1px),
-    /* cream highlight */
-    radial-gradient(
-      ellipse 70% 55% at 52% 28%,
-      rgba(255, 252, 247, 0.95) 0%,
-      rgba(247, 242, 234, 0.35) 42%,
-      transparent 72%
-    ),
-    /* slate / navy — upper left → right */
-    radial-gradient(
-      ellipse 58% 50% at 16% 6%,
-      rgba(92, 107, 122, 0.42) 0%,
-      rgba(47, 61, 79, 0.18) 45%,
-      transparent 70%
-    ),
-    radial-gradient(
-      ellipse 48% 62% at 92% 42%,
-      rgba(47, 61, 79, 0.28) 0%,
-      transparent 65%
-    ),
-    /* terracotta / clay — lower left sweep */
-    radial-gradient(
-      ellipse 72% 58% at 12% 95%,
-      rgba(196, 122, 85, 0.55) 0%,
-      rgba(168, 101, 72, 0.28) 38%,
-      transparent 68%
-    ),
-    radial-gradient(
-      ellipse 55% 48% at 68% 88%,
-      rgba(196, 122, 85, 0.22) 0%,
-      transparent 60%
-    ),
-    /* base wash */
-    linear-gradient(
-      145deg,
-      #e8edf1 0%,
-      var(--mesh-cream) 38%,
-      #f0e6dc 72%,
-      #e8d5c8 100%
-    );
-  background-size:
-    52px 52px,
-    52px 52px,
-    auto,
-    auto,
-    auto,
-    auto,
-    auto,
-    auto;
+    radial-gradient(circle at 1px 1px, rgb(17 17 17 / 0.07) 1px, transparent 0);
+  background-size: 22px 22px;
   background-attachment: fixed;
 }
 

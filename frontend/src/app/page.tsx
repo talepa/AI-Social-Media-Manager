@@ -1012,17 +1012,23 @@ export default function Home() {
 
     const onEnter = () => setCursorOn(true);
     const onLeave = () => setCursorOn(false);
+    const onDown = () => cursorRef.current?.classList.add("is-pressing");
+    const onUp = () => cursorRef.current?.classList.remove("is-pressing");
 
     paint();
     window.addEventListener("pointermove", onMove, { passive: true });
     document.documentElement.addEventListener("mouseenter", onEnter);
     document.documentElement.addEventListener("mouseleave", onLeave);
+    window.addEventListener("pointerdown", onDown, { passive: true });
+    window.addEventListener("pointerup", onUp, { passive: true });
     window.addEventListener("pointerdown", onEnter, { passive: true });
     return () => {
       cancelAnimationFrame(raf);
       window.removeEventListener("pointermove", onMove);
       document.documentElement.removeEventListener("mouseenter", onEnter);
       document.documentElement.removeEventListener("mouseleave", onLeave);
+      window.removeEventListener("pointerdown", onDown);
+      window.removeEventListener("pointerup", onUp);
       window.removeEventListener("pointerdown", onEnter);
       root.classList.remove("has-custom-cursor");
     };
@@ -1246,11 +1252,11 @@ export default function Home() {
   }, [result]);
 
   return (
-    <div style={{ minHeight: "100vh", position: "relative" }}>
+    <div className="brutal-app" style={{ minHeight: "100vh", position: "relative" }}>
       <div className="bg-grain" aria-hidden />
       <div
         ref={cursorRef}
-        className={`app-cursor${cursorOn ? " is-on" : ""}`}
+        className={`app-cursor brutal-cursor${cursorOn ? " is-on" : ""}`}
         aria-hidden
       >
         <span className="app-cursor-ring" />

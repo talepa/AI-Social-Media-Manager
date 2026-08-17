@@ -72,7 +72,7 @@ const FLOW = [
   {
     step: "01",
     title: "Get started",
-    body: "Enter a topic and pick a research type. Atelier chooses the right mix of web, news, papers, and GitHub.",
+    body: "Drop a topic, pick a type. We pull web, news, papers, and GitHub in one shot.",
   },
   {
     step: "02",
@@ -243,17 +243,17 @@ export default function HeroHome({ onResearch }: { onResearch: () => void }) {
   const feed = [...QUERIES, ...QUERIES];
 
   return (
-    <main className="fade-in hero-shell">
+    <main className="fade-in hero-shell brutal-hero">
       <section className="atelier-hero">
         <div className="hero-inner atelier-hero-grid">
           <div className="atelier-hero-copy">
-            <p className="hero-kicker rise">Research desk · 2026</p>
+            <p className="hero-kicker rise">Topic → Report · 2026</p>
             <h1 className="atelier-hero-title rise" style={{ animationDelay: "0.05s" }}>
-              Get a cited report from live sources.
+              Research that hits hard.
             </h1>
             <p className="atelier-hero-lead rise" style={{ animationDelay: "0.1s" }}>
-              Search the web, headlines, papers, and GitHub in parallel — then
-              turn the findings into a briefing you can browse, cite, and download.
+              Web, news, papers, and GitHub — scraped, ranked, and packaged into
+              a cited report you can browse, share, and export.
             </p>
             <div className="hero-actions rise" style={{ animationDelay: "0.16s" }}>
               <button type="button" className="btn-3d" onClick={onResearch}>
@@ -297,9 +297,9 @@ export default function HeroHome({ onResearch }: { onResearch: () => void }) {
         <div className="hero-inner section-band-inner">
           <div className="hero-section-head">
             <p className="hero-kicker">Process</p>
-            <h2 className="hero-section-title">Three steps. One desk.</h2>
+            <h2 className="hero-section-title">Three steps. Zero fluff.</h2>
             <p className="hero-section-lead">
-              From a topic to a finished report — without leaving the page.
+              Topic in, sources out, report done — all on one page.
             </p>
           </div>
           <ol className="process-row">
@@ -391,7 +391,7 @@ export default function HeroHome({ onResearch }: { onResearch: () => void }) {
         </div>
       </section>
 
-      <section className="section-band section-band-quiet" aria-label="Why Atelier">
+      <section className="section-band section-band-quiet" aria-label="Why us">
         <div className="hero-inner section-band-inner">
           <div className="hero-section-head">
             <p className="hero-kicker">Why</p>
@@ -412,9 +412,9 @@ export default function HeroHome({ onResearch }: { onResearch: () => void }) {
         <div className="hero-inner close-band-inner">
           <div>
             <p className="hero-kicker">Studio</p>
-            <p className="close-title">Ready to research?</p>
+            <p className="close-title">Ready to run it?</p>
             <p className="close-body">
-              Search sources first, then generate the report when you need it.
+              Pull sources first. Generate the report when you want the full picture.
             </p>
           </div>
           <button type="button" className="btn-3d" onClick={onResearch}>
