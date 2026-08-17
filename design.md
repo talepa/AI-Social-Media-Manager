@@ -1,793 +1,811 @@
-# Atelier — Design Specification
+# Atelier — Design System & Interaction Spec
 
-*A desk where sources become understanding.*
+*Four pigments hit the page. Where they overlap, you have evidence.*
 
----
-
-## 0. Product
-
-Atelier turns a research question into ranked multi-source evidence and a cited report. It gathers Web (Tavily), News (Google News RSS), Papers (Semantic Scholar, OpenAlex, Crossref, arXiv) and GitHub in parallel through a FastAPI + LangGraph graph, caches results on disk (key `v5-categories`), and compiles a deterministic report that Gemini may optionally rewrite in exactly one call. No auth, no saved history, session state only. Frontend is Next.js with Bodoni Moda and Instrument Sans on paper stock. The question Atelier answers is **"help me investigate this question and understand the evidence"** — not open-ended conversational search.
+**Direction name:** WET INK
+**Version:** 2.0 (replaces the paper-and-ink editorial direction entirely)
+**Reference study:** microsoft.ai — structural and motion patterns only, see §0.2
 
 ---
 
-## 1. Design intent
+## 0.1 What Atelier is
 
-A research desk, not a dashboard and not a chat window.
+Atelier turns a research question into ranked multi-source evidence and a cited report. It gathers **Web** (Tavily), **News** (Google News RSS), **Papers** (Semantic Scholar, OpenAlex, Crossref, arXiv) and **GitHub** in parallel through FastAPI + LangGraph, caches on disk (`v5-categories`, 24h TTL), compiles a deterministic report, and optionally rewrites it with exactly one Gemini call. No auth, no saved history, session state only. Stack: Next.js 16, React 19, Tailwind v4.
 
-The physical reference is a working desk mid-investigation: a sheet of paper with the question at the head, findings written down the measure, and source cards laid out along the right margin with pencil lines drawn from a claim to the card that supports it. Atelier's job is to keep that line visible. Every design decision below is judged against one test: **can the reader get from a sentence to the source that justifies it in one move, without losing their place?**
+This document covers **two surfaces built from one system**:
 
-The interface should feel like it was set, not rendered. Type does the work. Colour is used the way a researcher uses a pen: sparingly, to mark, never to fill.
+| Surface | Job | Register |
+|---|---|---|
+| **Site** (`/`) | Explain what Atelier does in 20 seconds and get the question typed | Expressive, illustrated, animated |
+| **Desk** (`/desk`) | Run research and read evidence | Same palette and marks, dialled down 40% |
+
+The site is where the system is loud. The desk is where it works.
+
+## 0.2 What was taken from the reference, and what was not
+
+| Pattern taken | How it is used here |
+|---|---|
+| Mixed display headline (one italic serif word inside a sans line) | Hero and section heads |
+| Abstract painterly symbol per product object | One pigment sigil per **source family**, not per model |
+| Image-led entity cards with kicker → title → line → link | Source family cards, mode cards |
+| Horizontal expanding accordion for principles | "How Atelier works" step accordion |
+| Full-bleed featured hero with overlaid title | Live specimen hero |
+| An explicit accessibility toggle in the chrome | "Plain view" switch, §11 |
+| Read-time / weight labels on cards | Source counts, API budgets, cache age |
+
+**Not taken:** no assets, no illustrations, no photography, no copy, no colour values, no typefaces from that site. Atelier's palette is pigment-mixing based and its sigils are generated from Atelier's own source taxonomy. Do not download or trace anything from the reference.
 
 ---
 
-## 2. Visual identity
+# 1. Design intent
+
+**The atelier is a mixing studio, not a library.**
+
+Four sources drop onto wet paper. Web is cyanotype blue. News is vermilion. Papers is mulberry. GitHub is verdigris. Each spreads. Where two pigments overlap, the colour multiplies into a third — and that new colour is the entire product thesis rendered as physics: **a claim carried by two independent families is a different colour than a claim carried by one.**
+
+Everything in this system descends from that one idea:
+
+* Corroboration = overlap
+* Authority = saturation
+* Recency = wetness (edge softness)
+* Uncertainty = an unfilled bloom outline
+* Disagreement = two pigments that refuse to blend, printed off-register
+
+Nothing is decorative. If a shape does not encode a real value from the API response, it does not ship.
+
+---
+
+# 2. The signature — GATHER BLOOM
+
+The hero is a live canvas. On load, four pigment drops fall onto the page, spread with organic edges, and settle into an overlapping composition. Overlap regions render in multiply blend, producing the mixed hues.
+
+```
+        ┌─────────────────────────────────────────────┐
+        │                                             │
+        │        ●●●●●                                │
+        │      ●●●●●●●●●     WEB · cyanotype          │
+        │     ●●●●╳╳╳╳●●●●                            │
+        │      ●●╳╳███╳╳●●●   ← 3-family overlap      │
+        │       ●╳╳███╳╳●●      = strongest evidence  │
+        │        ●●╳╳╳●●●●●●                          │
+        │          ●●●●●●●●●●●  PAPERS · mulberry     │
+        │            ●●●●●●●                          │
+        │                                             │
+        │   NEWS · vermilion      GITHUB · verdigris  │
+        └─────────────────────────────────────────────┘
+```
+
+**It is not ambient.** It is wired to the product:
+
+| Surface | What the bloom is doing |
+|---|---|
+| Site hero | Idle demo. Drops fall on a 9s loop, then hold. Hovering a family name in the legend isolates that pigment and fades the rest to 12%. |
+| Studio (question typed) | Drops preview the **selected persona/category** — pick AI Engineer and the news drop disappears from the composition before you spend a call. |
+| Pipeline loader | Each drop lands **when its LangGraph node actually returns**. Web comes back in 1.2s, its blue lands at 1.2s. A failed family lands as a dry grey outline. This replaces every spinner in the product. |
+| Results header | Frozen final composition, sized by source count per family. It is the run's fingerprint. |
+| Evidence row | A 32px miniature bloom per claim. Two overlapping pigments = two families support it. One flat circle = single source, unconfirmed. |
+
+One canvas component, five contexts, zero fake states. This is the thing people will remember and it is also the honest status display.
+
+**Implementation:** SVG with `feTurbulence` + `feDisplacementMap` for the wet edge, `mix-blend-mode: multiply` on each pigment group, GSAP or Web Animations API for the drop timing. Total budget under 40KB, no video, no Lottie. Under Plain view (§11) it renders as four flat labelled discs with no motion.
+
+---
+
+# 3. Visual identity
 
 | Element | Direction |
 |---|---|
-| Surface | Warm uncoated paper. Flat, no shadow, no blur, no gloss. Depth comes from rules and inset panels, not elevation. |
-| Structure | Press sheet. A fixed text measure with a live margin column, exactly like a scholarly edition with apparatus in the margin. |
-| Marks | Hairline rules (0.5px), rule stubs, hanging indents, folio numbers, small-caps eyebrows. |
-| Citations | Set in typewriter mono, boxed with a 1px rule, sitting on the baseline like a stamped reference: `[S04]` `[P02]` `[N11]` `[G03]`. |
-| Sources | Index-card stubs in the margin rail. Not tiles. Ruled top and bottom, no border box, no radius. |
-| Scores | Notched rules, five notches, never a decimal, never a progress bar. |
-| Temperature | Cool grey-warm paper, ink black, four functional inks. Nothing glows. |
+| Ground | Raw paper white `#FBFAF7`. Not cream, not grey. Sections alternate with `#F2EFE9` and one deep `#14161A` band. |
+| Illustration | Painterly pigment sigils, one per source family and one per research mode. Soft edges, visible grain, no outlines, no icons-in-circles. |
+| Shape language | Blooms, washes, off-register overlaps, torn edges. Nothing geometric. Radius is either 0 or 999px (a bloom), never 8px. |
+| Photography | **None of people.** Atelier has no team page and stock faces would be a lie. Photography is macro texture only: ink on paper, pigment in water, paper fibre. Used at low opacity behind the deep band. |
+| Iconography | Drawn as pigment strokes at 24px, not a downloaded icon set. Nine icons total, listed §8. |
+| Chrome | Very light. Thin sticky header, generous air, no borders around content blocks. |
+| Depth | Layering by blend mode and opacity, never by shadow. |
 
-### Signature element — **the thread**
+## 3.1 The sigil set
 
-Every citation marker in the reading column is tied to its source stub in the right margin rail by a hairline connector that draws itself on hover or focus.
+Each is a single-colour painterly mark, delivered as SVG plus a 2x PNG fallback.
 
-```
-  reading column                              margin rail
-  ────────────────────────────                ───────────────
-  Most production deployments
-  still favour retrieval over ╌╌╌╌╌╌╌╌╌╌╌╌╌╮
-  long context [S04][P02].                  ╰─ [S04] Anyscale
-                                               eng blog · 2026
-                                               ▌▌▌▌▌ relevance
-                                            ───────────────
-                                               [P02] arXiv
-                                               2601.08812
-```
-
-The thread is the whole product in one gesture: a claim is never more than a line away from its evidence. Nothing else on the page animates on hover. Boldness is spent here and nowhere else.
-
-**Why this and not the obvious alternative.** The default move for a "sources" product is a footnote popover on click. A popover hides the map: the reader sees one source at a time and never sees that six claims lean on the same press release. The persistent rail shows source concentration at a glance, and the thread makes the link explicit without covering the text.
-
----
-
-## 3. Anti-patterns
-
-Hard NO list. If a component drifts toward any of these, it is wrong regardless of how good it looks.
-
-| Banned | Because |
-|---|---|
-| Chat bubbles, message threads, typing indicators | Atelier is not conversational. A question is a heading, not a message. |
-| Glassmorphism, blur, frosted panels | Fake depth on a paper surface. |
-| Purple/blue AI gradients, glow, sparkle icons | Makes the AI the subject. The evidence is the subject. |
-| KPI tiles ("142 SOURCES" in 64px) | Metric theatre. Counts are metadata, set them small. |
-| Fully rounded pill CTAs | Product-marketing vernacular, wrong register. Radius ceiling is 2px. |
-| Neumorphism, soft shadows, embossing | Same reason as glass. |
-| Card grids for everything | Cards imply peer objects. Sources are ranked rows, not a gallery. |
-| Skeleton shimmer loaders | Dishonest. Show the real pipeline step instead. |
-| Emoji as UI iconography | Set marks in type or draw them. |
-| Animated "AI thinking" copy | Name the actual API being called. |
-| Percentages with decimals on scores | Fake precision. See §D6. |
-
----
-
-## 4. Colour tokens
-
-Six inks on one paper. Colour is never decorative fill; it marks category, state, or evidence class only.
-
-| Token | Hex | Role |
-|---|---|---|
-| `--paper` | `#F5F1E8` | Page stock |
-| `--paper-2` | `#EDE7DA` | Inset panels, table zebra, drawer back |
-| `--paper-3` | `#E2DBCB` | Rules, hairlines, dividers |
-| `--ink` | `#171717` | Primary type |
-| `--ink-2` | `#57534B` | Secondary type, metadata |
-| `--ink-3` | `#8A8377` | Tertiary, disabled, placeholder |
-| `--research-red` | `#B23124` | The active mark: current mode, focus, live pipeline step, the thread |
-| `--evidence-blue` | `#2C4A7C` | Papers, primary/academic evidence class |
-| `--verified-green` | `#3F6B4A` | Confirmed, high-agreement, cache hit, completed step |
-| `--warning-amber` | `#9C6B1E` | Disagreement, weak evidence, stale source, partial failure |
-| `--ink-wash` | `#171717` @ 6% | Selection, hover row, code fill |
-
-Rules for use:
-
-* One red per screen state. If two things are red, one of them is wrong.
-* Evidence class is shown by **ink colour + label**, never colour alone (§10).
-* No colour behind body text. Marks live in the margin, in the rule, or in the glyph.
-* Dark mode is **not** shipped and not planned for V1. Inverting paper stock breaks the metaphor; if it is ever built it becomes "carbon" (`#14140F` ground, `#E8E2D4` type), specified separately.
-
----
-
-## 5. Typography
-
-| Role | Face | Usage |
-|---|---|---|
-| Display | **Bodoni Moda** | Question headings, screen titles, the short answer. High contrast, tight tracking, never below 24px, never bold-italic. |
-| UI / body | **Instrument Sans** | Everything readable: labels, controls, table text, findings body. |
-| Utility mono | **Courier Prime** | Citation IDs, source codes, API/endpoint text, scores, folio numbers, timestamps. |
-
-Type scale (1.25 ratio, base 16):
-
-| Token | Size / line | Face | Use |
+| Sigil | Subject | Form | Colour |
 |---|---|---|---|
-| `--t-display` | 44 / 1.05 | Bodoni | Landing title, results question |
-| `--t-title` | 30 / 1.15 | Bodoni | Screen and tab titles |
-| `--t-answer` | 22 / 1.45 | Bodoni | THE SHORT ANSWER paragraph |
-| `--t-lead` | 18 / 1.55 | Instrument | Brief body, evidence claims |
-| `--t-body` | 16 / 1.6 | Instrument | Default |
-| `--t-small` | 14 / 1.5 | Instrument | Table cells, drawer body |
-| `--t-eyebrow` | 11 / 1.2 | Instrument, 600, +0.14em, uppercase | Section kickers |
-| `--t-mono` | 12 / 1.4 | Courier Prime | `[S04]`, scores, dates, folio |
+| `web` | Live web | Three concentric ripples, off-centre, the outer ring broken | Cyanotype |
+| `news` | Current developments | A fast diagonal stroke with a torn trailing edge | Vermilion |
+| `papers` | Academic | Four translucent overlapping rectangles, slightly rotated, like stacked offprints | Mulberry |
+| `github` | Implementations | A wet fork: one stroke splitting into two | Verdigris |
+| `claim` | Evidence ledger row | A knot where three strokes converge | Ink |
+| `agreement` | Consensus | Two blooms overlapping cleanly, the overlap darker | Verdigris + cyanotype |
+| `disagreement` | Conflict | Two blooms printed off-register, a hard white gap between them | Vermilion + mulberry |
+| `gap` | Research gap | A bloom with an unpainted hole at its centre | Gold |
+| `cache` | Cached run | A bloom with a dry, hard, fully-set edge | Ink 40% |
 
-Rules:
-
-* Measure is capped at **68 characters**. The reading column never spans the viewport.
-* Only three weights ship: Instrument 400 / 500 / 600. Bodoni 400 and 500 only.
-* Italic Bodoni is reserved for one thing: the question when it is quoted back in a running head.
-* Numerals: tabular in tables and scores, oldstyle in prose.
-* No letter-spacing on body copy. Tracking is for eyebrows and mono only.
+Generate these once as a set so the strokes share a hand. Keep the source files in `/design/sigils/*.svg`.
 
 ---
 
-## 6. Layout
+# 4. Colour
 
-The canvas is a press sheet, not a dashboard grid. Three zones, fixed relationship, no drag, no resize, no widgets.
+Pigments, not brand colours. Every hue in the interface is either a pigment, a mix of pigments, or the ground.
+
+## 4.1 Pigments
+
+| Token | Hex | Family | Meaning |
+|---|---|---|---|
+| `--pig-web` | `#2E6E8E` | Web / Tavily | Cyanotype blue |
+| `--pig-news` | `#D8592F` | News / RSS | Vermilion |
+| `--pig-papers` | `#6B4E9B` | Papers | Mulberry |
+| `--pig-github` | `#2F7F63` | GitHub | Verdigris |
+| `--pig-gold` | `#C79A26` | Gaps, uncertainty, warnings | Ochre |
+
+## 4.2 Mixes (computed, do not hand-pick)
+
+These are what multiply blend produces. Hardcode them only for flat fallbacks and Plain view.
+
+| Mix | Hex | Read as |
+|---|---|---|
+| web × papers | `#2A4A6B` | Strong technical + academic |
+| web × github | `#276B6E` | Implemented and documented |
+| papers × news | `#8A4F63` | Published and reported |
+| all four | `#1F3A46` | Fully corroborated |
+
+## 4.3 Ground and ink
+
+| Token | Hex | Use |
+|---|---|---|
+| `--ground` | `#FBFAF7` | Default page |
+| `--ground-2` | `#F2EFE9` | Alternating sections, cards |
+| `--ground-3` | `#E7E2D8` | Hairlines, inactive |
+| `--deep` | `#14161A` | One inverted band per page |
+| `--ink` | `#14161A` | Type |
+| `--ink-2` | `#4E5259` | Secondary |
+| `--ink-3` | `#878B92` | Tertiary, placeholder |
+
+**Rules.** Pigments never fill large areas — they are marks, sigils, blooms, and 2px rules. Body text is always ink on ground. The deep band appears exactly once per page. No gradients anywhere except inside pigment art.
+
+---
+
+# 5. Typography
+
+| Role | Face | Notes |
+|---|---|---|
+| Display | **Fraunces** (variable) | `SOFT 40, WONK 1` at large sizes. Italic is used for exactly one word per headline. Optical size axis set per step. |
+| UI / body | **Geist Sans** | 400/500/600 only |
+| Utility | **Geist Mono** | Source codes `[S04]`, scores, counts, endpoints, timings |
+
+## 5.1 The mixed headline
+
+The signature type move, used on the site only:
 
 ```
-┌────────────────────────────────────────────────────────────────────────┐
-│ RUNNING HEAD    ATELIER · "does rag still beat long context?" · EXPLORE │  48px, sticky
-├──────────┬─────────────────────────────────────────┬───────────────────┤
-│ RAIL     │ READING COLUMN                          │ MARGIN RAIL       │
-│ 180px    │ 640px max, 68ch measure                 │ 280px             │
-│          │                                         │                   │
-│ Brief    │ Findings, evidence rows, tables         │ Source stubs      │
-│ Evidence │                                         │ tied by thread    │
-│ Sources  │                                         │                   │
-│ Disagree │                                         │ Sticky, scrolls   │
-│ Gaps     │                                         │ with claims       │
-│          │                                         │                   │
-│ ─────    │                                         │                   │
-│ 24 srcs  │                                         │                   │
-│ 4 fams   │                                         │                   │
-└──────────┴─────────────────────────────────────────┴───────────────────┘
+   Four sources.
+   One  answer  you can
+        ▔▔▔▔▔▔ Fraunces italic, WONK 1
+   actually check.
 ```
 
-* **Running head** carries the question on every screen after landing. It is the anchor. It never scrolls away and it is always quoted, in Bodoni italic, truncated at one line with full text on hover/focus.
-* **Rail** is canvas navigation, not app navigation. Sections, not pages. Current section marked with a red rule stub on the left edge, not a filled background.
-* **Reading column** is single-column always. Two-column body text is not used, it breaks the thread geometry.
-* **Margin rail** is populated only on Brief and Evidence. On Sources it collapses and the table takes the full width minus rail.
-* Whitespace does the sectioning. Section breaks are 64px of air plus a hairline, not a boxed panel.
+Rules: one italic word per headline, always the word carrying the argument (*answer*, *evidence*, *disagree*, *check*). Never two. Never on the desk surface.
 
-Grid spacing scale: `4 8 12 16 24 32 48 64 96`. Nothing off-scale.
+## 5.2 Scale
+
+| Token | Site | Desk | Face |
+|---|---|---|---|
+| `--t-hero` | 88 / 0.94 | — | Fraunces 300, tracking -0.03em |
+| `--t-h1` | 56 / 1.02 | 34 / 1.1 | Fraunces 400 |
+| `--t-h2` | 38 / 1.1 | 26 / 1.2 | Fraunces 400 |
+| `--t-h3` | 24 / 1.25 | 20 / 1.3 | Geist 600 |
+| `--t-lead` | 21 / 1.5 | 18 / 1.55 | Geist 400 |
+| `--t-body` | 17 / 1.6 | 16 / 1.6 | Geist 400 |
+| `--t-small` | 14 / 1.5 | 14 / 1.5 | Geist 400 |
+| `--t-kicker` | 12 / 1.2, +0.12em, uppercase | same | Geist 600 |
+| `--t-mono` | 13 / 1.4 | 13 / 1.4 | Geist Mono |
+
+Hero clamps to `clamp(44px, 7vw, 88px)`. Measure caps at 62ch on the site, 72ch on the desk.
 
 ---
 
-## 7. Component inventory
+# 6. Layout
 
-| Component | Purpose | Key states |
+## 6.1 Site page rhythm
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│ ▸ HERO            full-bleed bloom canvas + mixed headline    │  100vh
+├──────────────────────────────────────────────────────────────┤
+│ ▸ ASK             the question field, floating over paper     │  auto
+├──────────────────────────────────────────────────────────────┤
+│ ▸ FAMILIES        4 sigil cards, staggered heights            │  auto
+├──────────────────────────────────────────────────────────────┤
+│ ▸ HOW IT WORKS    horizontal accordion, 5 steps               │  auto
+├──────────────────────────────────────────────────────────────┤
+│ ▸ SPECIMEN        deep band · live desk screenshot + callouts │  auto
+├──────────────────────────────────────────────────────────────┤
+│ ▸ MODES           5 mode cards with mode sigils               │  auto
+├──────────────────────────────────────────────────────────────┤
+│ ▸ HONESTY         what Atelier will not do                    │  auto
+├──────────────────────────────────────────────────────────────┤
+│ ▸ FOOTER          ask field repeated + repo + stack           │  auto
+└──────────────────────────────────────────────────────────────┘
+```
+
+Grid: 12 columns, 1280 max, 24px gutters, 32px page margin (16 on mobile). Vertical rhythm on an 8px base with section padding of 128 / 96 / 64 by breakpoint.
+
+**Deliberate asymmetry.** The family cards sit at four different vertical offsets (0, 48, 24, 72px) so the row reads as marks laid on a desk rather than a grid of tiles. This offset is removed under 900px.
+
+## 6.2 Desk layout
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│ ⬤◗ atelier   "does rag still beat long context?"    EXPLORE  │ 56px sticky
+│              ▲ run bloom, 28px, live                         │
+├────────────┬─────────────────────────────────────────────────┤
+│ BRIEF      │                                                 │
+│ EVIDENCE   │   reading area, 72ch                            │
+│ SOURCES    │                                                 │
+│ CONFLICTS  │                                                 │
+│ GAPS       │                                                 │
+│ ────────   │                                                 │
+│ ⬤ 8 web    │                                                 │
+│ ⬤ 4 news   │                                                 │
+│ ⬤ 9 papers │                                                 │
+│ ⬤ 3 github │                                                 │
+└────────────┴─────────────────────────────────────────────────┘
+```
+
+The run bloom sits in the header at 28px and stays there for the whole session. It is the anchor, and clicking it reopens the run summary.
+
+---
+
+# 7. Motion
+
+Motion is the interactive layer the product was missing. It is spent in four places and nowhere else.
+
+| # | Moment | Behaviour | Timing |
+|---|---|---|---|
+| 1 | **Gather bloom** | Four drops fall, spread, multiply. Staggered 0 / 320 / 640 / 900ms | 2.4s total, then hold |
+| 2 | **Section reveal** | On scroll: sigil paints in via `stroke-dashoffset` + mask wipe, then text rises 16px with 60ms stagger | 700ms sigil, 400ms text |
+| 3 | **Accordion open** | Horizontal panel expands from 88px to 420px, sigil rotates 4°, body cross-fades in | 420ms |
+| 4 | **Bloom spread on data** | Score, agreement, and family counts animate their bloom radius on first paint | 500ms |
+
+Micro-interactions, all 150–200ms:
+
+* Card hover: sigil scales to 1.04 and its edge softens (blur 0 → 1.5px). The card itself does not move or lift.
+* Citation `[S04]` hover: the marker fills with its family pigment, its source row in the drawer highlights.
+* Question field focus: the underline wets — a 2px rule spreads from centre in the mix colour of the active families.
+* Button hover: pigment fills from the bottom edge upward, text inverts to ground.
+* Copy / export success: a small bloom stamps at the cursor, once, no toast.
+
+**Easing:** `--ease-wet: cubic-bezier(.16,.84,.34,1)` for spreads, `--ease-ui: cubic-bezier(.2,.6,.2,1)` for everything else.
+
+**Never:** parallax on text, scroll-jacking, cursor followers, marquees, typewriter effects, number counters, looping ambient particles, page transitions over 400ms.
+
+```css
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition-duration: 1ms !important; }
+  .bloom { --bloom-state: settled; }  /* renders final frame only */
+}
+```
+
+---
+
+# 8. Components
+
+| Component | Purpose | States |
 |---|---|---|
-| `RunningHead` | Anchors the question and mode on every post-landing screen | default, truncated, mode-changed |
-| `ResearchQuestion` | The input. Bodoni textarea on paper, auto-growing, rule underneath instead of a box | empty, typing, too-short (<8 chars), submitting |
-| `ModeSelector` | Explore / Compare / Evaluate / Academic / News. Ruled tabs, not pills | selected, hover, planned-badge on Compare/Evaluate |
-| `DepthSelector` | Quick / Standard / Deep with the literal source budget printed under each | selected, disabled (Deep when no key) |
-| `CategoryChips` | General, AI Engineer, Founder, Academic, News desk. Small caps, rule-underline on active | active, inactive |
-| `ResearchProgress` | Real pipeline checklist with named sources and elapsed time | queued, running, done, failed, cached |
-| `CanvasNav` | Left rail section switcher plus source/family counts | active, empty-section, planned-section |
-| `SourceExplorer` | Ruled table of all sources: code, title, type, date, score | loading, populated, filtered, empty |
-| `SourceDrawer` | Provenance panel: why ranked, quality notches, original link | opening, open, error-fetching-preview |
-| `CitationMarker` | `[S04]` inline button, mono, boxed, thread origin | rest, hover (thread drawn), focus, active (drawer open) |
-| `ResearchBrief` | THE SHORT ANSWER plus supporting-source counts | compiled, enhanced, degraded (LLM failed) |
-| `EvidenceLedger` | Claim → supported by → strength rows with hanging indent | populated, single-source warning, empty |
-| `SourceStub` | Margin-rail card: code, domain, date, notch bar | rest, threaded, dimmed (not cited on this screen) |
-| `DisagreementPanel` | Conflicting positions side by side | planned-placeholder, populated |
-| `ResearchGap` | Numbered open questions | populated, none-found |
-| `ScoreNotch` | Five-notch quality rule | 1–5 notches, unknown |
-| `ReportBar` | Compile / Enhance / Export controls, fixed to the foot of the reading column | idle, compiling, enhancing, exported |
+| `GatherBloom` | The signature canvas, five contexts (§2) | idle-loop, preview, live, frozen, failed-family, plain |
+| `MixedHeading` | Display headline with one italic word | — |
+| `AskField` | Question input, oversized, wet underline | empty, typing, too-short, submitting, error |
+| `FamilyCard` | One source family: sigil, kicker, name, what it gets you, count | rest, hover, disabled (no API key) |
+| `ModeCard` | Explore / Compare / Evaluate / Academic / News | rest, selected, planned-badge |
+| `DepthPicker` | Quick 4 · Standard 6 · Deep 10 per source, budget printed | selected, disabled |
+| `StepAccordion` | Horizontal 5-step "how it works" | collapsed, expanded, mobile-stacked |
+| `PipelineBloom` | Loader: drops land as nodes return | queued, running, landed, dry (failed), cached |
+| `SpecimenBand` | Deep-band product shot with pigment callout lines | static, in-view (callouts draw in) |
+| `SourceRow` | Ruled row: code, title, family sigil, date, score bloom | rest, hover, open, dead-link |
+| `SourceDrawer` | Provenance: why ranked, quality blooms, original | opening, open, no-preview, unscored |
+| `CitationChip` | Inline `[S04]`, mono, family-tinted | rest, hover, focus, active |
+| `ClaimRow` | Claim + supporting chips + mini bloom + strength | multi-family, single-source, conflicting |
+| `ConflictPair` | Two off-register blooms, positions side by side | planned-placeholder, populated |
+| `GapCard` | Numbered gap with hollow bloom | populated, none-found |
+| `ScoreBloom` | Quality as bloom radius, five steps, no decimals | 1–5, unscored |
+| `PlainToggle` | Kills all pigment art and motion (§11) | on, off |
+| `ReportBar` | Compile / Enhance (1 call) / Export | idle, compiling, enhancing, done |
+
+## 8.1 Icon set (drawn, not imported)
+
+`ask` · `refresh` · `open-external` · `download` · `close` · `expand` · `check` · `alert` · `plain-view`
+
+24px, 1.75px stroke, painterly terminals, single colour, inherits `currentColor`.
 
 ---
 
-## 8. Motion
+# 9. Screens
 
-| Event | Motion | Duration |
-|---|---|---|
-| Screen enter | Type settles: 6px rise + opacity, staggered 40ms by block | 200ms, `cubic-bezier(.2,.6,.2,1)` |
-| Citation hover/focus | Thread draws left→right via `stroke-dashoffset`; target stub gains a red rule | 180ms |
-| Source drawer | Slides from right, paper edge visible, no dim overlay below 1280px | 220ms in, 150ms out |
-| Pipeline step complete | Checkmark stamps: scale 0.9→1 with no bounce, label ink darkens | 150ms |
-| Tab switch | Cross-fade only, no slide. The running head must not move | 150ms |
-| Score notches | Fill left to right on first paint, 30ms per notch | 150ms total |
+Every screen: purpose, wireframe, components, states.
 
-Rules: nothing loops, nothing pulses, nothing above 250ms. Under `prefers-reduced-motion: reduce` all of the above collapse to instant state changes except opacity fades capped at 80ms; the thread renders as a static line on focus rather than drawing.
+## A. Site hero
+
+**Purpose** — say what this is and start the bloom in the first second.
+
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│ ⬤◗ atelier              how it works   sources   modes   [ open desk ]│
+├──────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│   RESEARCH DESK                    ╭──────────────────────╮          │
+│                                    │      ●●●●●           │          │
+│   Four sources.                    │    ●●●╳╳╳●●●         │          │
+│   One  answer  you                 │   ●●╳╳███╳╳●●●       │          │
+│        ▔▔▔▔▔▔                      │    ●●╳╳╳╳●●●●●       │          │
+│   can actually check.              │      ●●●●●●●         │          │
+│                                    ╰──────────────────────╯          │
+│   Ask a question. Atelier searches                                   │
+│   the web, the news, the papers and    ⬤ web    ⬤ news              │
+│   the code, then shows you which       ⬤ papers ⬤ github            │
+│   sources back which claim.            ↑ hover to isolate            │
+│                                                                      │
+│   [ Ask a question ↓ ]   no signup · nothing saved                   │
+│                                                                      │
+│                              ⌄ scroll                                │
+└──────────────────────────────────────────────────────────────────────┘
+```
+
+**Components** — `GatherBloom` (idle-loop), `MixedHeading`, legend, primary CTA.
+**States** — *loading* (ground + headline paint first, bloom joins at 400ms so the page is never blank) · *reduced-motion* (settled frame, legend still interactive) · *plain view* (four labelled discs).
+
+## B. Ask
+
+**Purpose** — the field is the product. It gets its own section and full attention.
+
+```
+│                                                                      │
+│   ── ASK ─────────────────────────────────────────────────────       │
+│                                                                      │
+│   What are you trying to find out?                                   │
+│                                                                      │
+│   ┌────────────────────────────────────────────────────────────┐     │
+│   │  Does retrieval still beat long-context for enterprise…    │     │
+│   └────────────────────────────────────────────────────────────┘     │
+│    ══════════════════════════════════ wet underline, mix colour      │
+│                                                                      │
+│   MODE   ⬤ Explore  ○ Compare  ○ Evaluate  ○ Academic  ○ News        │
+│   DEPTH  ○ Quick 4   ⬤ Standard 6   ○ Deep 10   per source           │
+│   ASKING ⬤ web  ⬤ papers  ⬤ github        ≈ 18 results · 0 AI calls  │
+│                                                                      │
+│                                    [ Run research → ]                │
+│                                                                      │
+│   Or try:  agent frameworks 2026 · RAG vs long context · multimodal   │
+```
+
+Selecting or deselecting a family animates that pigment in or out of the hero bloom above. The cost line updates live.
+
+**States** — *empty* ("Type a question. Not keywords.") · *short* (submit disabled, hint under the rule) · *submitting* (underline saturates, button fills) · *no Tavily key* (web family greys with the reason printed inline).
+
+## C. Families
+
+**Purpose** — make the four sources concrete and show what each one is good for.
+
+```
+│   ── WHAT GETS SEARCHED ──────────────────────────────────────       │
+│                                                                      │
+│   ╭─────────╮      ╭─────────╮      ╭─────────╮     ╭─────────╮      │
+│   │ ((( ))) │      │  ╱╱╱╱   │      │ ▤▤▤▤    │     │  ⑂      │      │
+│   │  ripples│      │  torn   │      │ stacked │     │  fork   │      │
+│   ╰─────────╯      ╰─────────╯      ╰─────────╯     ╰─────────╯      │
+│   LIVE WEB         NEWS             PAPERS          CODE             │
+│   Tavily           Google News      S2 · OpenAlex   GitHub Search    │
+│                    RSS              Crossref·arXiv                   │
+│   Docs, analysis,  What shipped     Peer-reviewed   Who actually     │
+│   engineering      this month       work and its    built it, and    │
+│   writing          and when         citations       how active       │
+│                                                                      │
+│   offset 0px       offset 48px      offset 24px     offset 72px      │
+```
+
+**States** — *rest* · *in-view* (sigil paints in, staggered 90ms) · *hover* (sigil edge softens) · *unavailable* (sigil desaturates to 20%, kicker reads "needs a key").
+
+## D. How it works
+
+**Purpose** — kill the "is this a chatbot?" question in one glance.
+
+Horizontal accordion. Collapsed panels show a vertical label and the sigil. One is open at a time.
+
+```
+│  ┌────┬────┬──────────────────────────────────┬────┬────┐            │
+│  │ 01 │ 02 │  03  GATHER IN PARALLEL          │ 04 │ 05 │            │
+│  │ A  │ R  │  ────────────────────────        │ R  │ E  │            │
+│  │ S  │ O  │  All four families run at once   │ A  │ X  │            │
+│  │ K  │ U  │  in a LangGraph node each. One   │ N  │ P  │            │
+│  │    │ T  │  failing does not stop the rest. │ K  │ O  │            │
+│  │    │ E  │                                  │    │ R  │            │
+│  │    │    │  ●●●╳╳●●●  ← bloom fills here    │    │ T  │            │
+│  └────┴────┴──────────────────────────────────┴────┴────┘            │
+```
+
+Steps: **01 Ask** · **02 Route** (persona picks which families run) · **03 Gather** · **04 Rank & link** · **05 Compile or enhance** (one Gemini call, optional).
+
+**States** — *collapsed* · *expanded* · *mobile* (stacks vertically, all open, no accordion).
+
+## E. Specimen band
+
+**Purpose** — one inverted band showing the real desk with pigment callouts.
+
+```
+├══════════════════════════════════════════════════════════════════════┤ deep
+│                                                                      │
+│   Every claim carries its receipts.                                  │
+│                                                                      │
+│      ┌────────────────────────────────────────┐                      │
+│      │  [ real screenshot of the desk ]        │──── callout line     │
+│      │                                        │     drawn on scroll   │
+│      └────────────────────────────────────────┘                      │
+│           │                    │                                     │
+│      ⬤ family sigil       ⬤ mini bloom = 3 families agree           │
+│                                                                      │
+├══════════════════════════════════════════════════════════════════════┤
+```
+
+Callout lines are hairline pigment strokes that draw in with `stroke-dashoffset` when the band is 40% in view.
+
+## F. Modes
+
+Five cards, each with its own mode sigil. Compare and Evaluate carry a small mono badge: `shapes the report, not the search yet`.
+
+```
+│  ╭──────────╮ ╭──────────╮ ╭──────────╮ ╭──────────╮ ╭──────────╮   │
+│  │ EXPLORE  │ │ COMPARE  │ │ EVALUATE │ │ ACADEMIC │ │ NEWS     │   │
+│  │ open     │ │ two      │ │ one      │ │ papers   │ │ last 30  │   │
+│  │ question │ │ options  │ │ choice   │ │ first    │ │ days     │   │
+│  │          │ │ PLANNED  │ │ PLANNED  │ │          │ │          │   │
+│  ╰──────────╯ ╰──────────╯ ╰──────────╯ ╰──────────╯ ╰──────────╯   │
+```
+
+## G. Desk — pipeline
+
+**Purpose** — replace the spinner with the truth.
+
+```
+│  "Does retrieval still beat long-context…"              STANDARD     │
+│                                                                      │
+│              ╭─────────────────────────╮                             │
+│              │        ●●●●●            │   web landed    6  1.2s     │
+│              │      ●●●●●●●            │   news landed   4  0.8s     │
+│              │        ·  ·             │   papers …                  │
+│              │      ( dry outline )    │   github ✕ rate limited     │
+│              ╰─────────────────────────╯                             │
+│                                                                      │
+│              10 sources in · 2 of 4 families                         │
+```
+
+A landed family = its pigment blooms into the composition. A failed family = a dry grey outline that stays visible, never removed.
+
+## H. Desk — brief
+
+```
+┌──────────┬──────────────────────────────────────────────────────────┐
+│ BRIEF ▌  │  ⬤◗ THE SHORT ANSWER                                     │
+│ Evidence │                                                          │
+│ Sources  │  For enterprise search, retrieval still wins on cost     │
+│ Conflicts│  and freshness. Long context wins on multi-document      │
+│ Gaps     │  reasoning. Most 2026 deployments run both. [S04] [P02]  │
+│          │                                                          │
+│ ──────── │  ── WHERE SOURCES AGREE ──                               │
+│ ⬤ 8 web  │  ◉ Latency favours retrieval at scale                    │
+│ ⬤ 4 news │    3 families · 6 sources    [S01][S04][P02]             │
+│ ⬤ 9 papr │  ◉ Context windows removed most chunking work            │
+│ ⬤ 3 gh   │    2 families · 4 sources    [P07][G02]                  │
+│          │                                                          │
+│          │  ── WHERE IT IS THIN ──                                  │
+│          │  ○ Cost at production volume is claimed, not measured    │
+│          │    1 family · 1 source       [N03]                       │
+└──────────┴──────────────────────────────────────────────────────────┘
+```
+
+`◉` is a mini bloom sized and coloured by the families backing it. `○` hollow means single-source.
+
+**States** — *compiled* · *enhanced* (mono note: "rewritten by Gemini · one call · sources unchanged") · *degraded* (gold note: "enhance failed, showing the compiled brief") · *thin* (under 5 sources).
+
+## I. Desk — sources and drawer
+
+```
+│  SOURCES        ⬤ web 8   ⬤ news 4   ⬤ papers 9   ⬤ github 3        │
+│  ──────────────────────────────────────────────────────────────      │
+│  S01  ((( ))) Retrieval at scale: what we kept   2026-06  ●●●●●      │
+│  P02  ▤▤▤▤    Long-context limits in multi-hop   2026-01  ●●●●○      │
+│  N03  ╱╱╱╱    Vendor claims 90% cost cut         2026-08  ●●○○○      │
+│  G02  ⑂       langgraph/retrieval-bench          2026-07  ●●●○○      │
+│                                                                      │
+│                   ┌──────────────────────────────────────┐           │
+│                   │  P02  ▤▤▤▤                    close ×│           │
+│                   │  Long-context limits in multi-hop QA │           │
+│                   │  arXiv · 2601.08812 · 14 Jan 2026    │           │
+│                   │                                      │           │
+│                   │  WHY IT RANKED                       │           │
+│                   │  Title and abstract match both key   │           │
+│                   │  terms. 41 citations. 8 months old.  │           │
+│                   │                                      │           │
+│                   │  Relevance ●●●●●   Authority ●●●●○   │           │
+│                   │  Recency   ●●●●●   Evidence  ●●●●○   │           │
+│                   │                                      │           │
+│                   │  CITED IN  claim 01, claim 03        │           │
+│                   │  [ Open original ↗ ]                 │           │
+│                   └──────────────────────────────────────┘           │
+```
+
+Scores are five blooms, never a percentage, never a decimal. Unscored renders `○○○○○` with the word "not scored".
+
+## J. Desk — conflicts and gaps
+
+```
+│  CONFLICTS                                                           │
+│  ────────────────────────────────────────────────                    │
+│        ●●●●●●        ●●●●●●     ← off-register, hard white gap       │
+│      ●●●●●●●●●    ●●●●●●●●●                                          │
+│                                                                      │
+│      Not built yet. Atelier will show where credible sources         │
+│      reach different conclusions. It needs the evidence layer        │
+│      first, so it lands in phase 3.                                  │
+│      Meanwhile: claim 03 is marked conflicting in Evidence.          │
+│                                                                      │
+│  GAPS                                                                │
+│  ────────────────────────────────────────────────                    │
+│  ◍ 1  No source measures cost at production volume. All four         │
+│       cost claims trace back to vendor material.                     │
+│  ◍ 2  Benchmarks reuse the same two datasets. [P02][P07]             │
+│  ◍ 3  Nothing published after June 2026 on hybrid deployment.        │
+```
+
+`◍` is the hollow gap sigil. Empty states are always written as a sentence explaining what is missing and when it arrives, never as a shrug.
 
 ---
 
-## 9. Responsive
+# 10. Asset production list
 
-Desktop-first, because the canvas is the product.
+Nothing here is downloadable from anywhere. Produce it once, keep the source files.
+
+| Asset | Format | Size | Notes |
+|---|---|---|---|
+| 4 family sigils | SVG + PNG@2x | 240×240 | One pigment each, painterly edge |
+| 5 mode sigils | SVG | 160×160 | Ink only, lighter weight than family sigils |
+| 5 state sigils (claim, agreement, disagreement, gap, cache) | SVG | 120×120 | |
+| Bloom shader assets | SVG filters | inline | `feTurbulence` seeds 1–4, one per family |
+| 9 UI icons | SVG sprite | 24×24 | 1.75px stroke |
+| 3 texture plates | WebP | 1600w, ≤120KB | Ink in water, paper fibre, dried wash. Deep band only, ≤14% opacity |
+| Specimen screenshots | WebP | 2400w | Real desk, real run, no mockup frames, no floating devices |
+| OG image | PNG | 1200×630 | Frozen bloom + wordmark |
+| Favicon / wordmark | SVG | — | `⬤◗` — a wet drop meeting a dry edge |
+
+**Do not use:** stock photography of people, 3D renders, gradient meshes, isometric illustration, device mockups, AI-generated faces.
+
+Performance budget: hero under 180KB total, `LCP` under 2.0s on 4G, all sigils inlined as SVG rather than fetched, textures lazy.
+
+---
+
+# 11. Accessibility
+
+* **Plain view toggle** in the header, persisted in `localStorage`. It flattens every bloom to a labelled disc, disables all motion, and switches score blooms to `4/5` text. This is a first-class view, not a degraded one, and it is tested at every release.
+* Contrast on ground `#FBFAF7`: ink 15.1:1, ink-2 7.4:1, web 5.3:1, papers 6.9:1, news 4.6:1 (14px+/600 only), github 5.1:1, gold 4.5:1 (large text and marks only, never body).
+* **No colour-only meaning.** Every pigment is always paired with the family name or its sigil shape. A colourblind user reads "papers" from the stacked-rectangle mark, not the mulberry.
+* Blooms are `aria-hidden`. The data they encode is exposed as text: `aria-label="Supported by 3 families, 6 sources"`.
+* Citation chips are real buttons with descriptive labels, in reading order, and the drawer traps focus and returns it on close.
+* Pipeline progress is `aria-live="polite"` and announces each family once as it lands or fails.
+* Focus: 2px outline in the active mix colour, 2px offset, never removed.
+* Keyboard: `/` focus ask · `1–5` desk sections · `[` `]` prev/next source · `Esc` close · `Cmd/Ctrl+Enter` run.
+* WCAG **AA** minimum throughout, AAA on body copy.
+
+---
+
+# 12. Responsive
 
 | Breakpoint | Behaviour |
 |---|---|
-| ≥1440px | Full three-zone canvas. Margin rail 280px, threads live. |
-| 1120–1439px | Margin rail narrows to 220px, stubs drop the excerpt line. |
-| 900–1119px | Margin rail collapses to a toggled panel. Threads disabled, citation click opens the drawer directly. |
-| <900px | Single column. Rail becomes a horizontal scrolling section bar under the running head. Order: **Brief → Evidence → Sources → Disagreements → Gaps**. Drawer becomes a bottom sheet at 85vh. Source explorer table becomes stacked ruled records, not a horizontally scrolling table. |
+| ≥1280 | Full system. Bloom at 560px, family cards staggered, accordion horizontal. |
+| 1024–1279 | Bloom 420px, stagger reduced by half. |
+| 768–1023 | Hero stacks: headline then bloom. Family cards 2×2, no offsets. Accordion goes vertical. |
+| <768 | Bloom 300px and drops to 2 pigments per frame for performance. Ask field full width, sticky CTA bar at the bottom. Desk sections become a horizontal scrolling tab bar; drawer becomes an 85vh bottom sheet; source table becomes stacked records. Order: **Brief → Evidence → Sources → Conflicts → Gaps**. |
 
-Mobile keeps the running head, shortened to the first 40 characters of the question plus mode.
-
----
-
-## 10. Accessibility
-
-* WCAG **AA** minimum on every ink-on-paper pair. Verified: `--ink` on `--paper` 14.8:1, `--ink-2` 7.1:1, `--research-red` on paper 5.4:1, `--evidence-blue` 8.2:1, `--warning-amber` 4.6:1 (used at 14px+ / 600 only).
-* Citation markers are real `<button>` elements with `aria-label="Source S04, Anyscale engineering blog, opens source detail"`. They are reachable in reading order.
-* The thread is decorative and `aria-hidden`. The relationship it draws is also expressed by `aria-describedby` on the claim pointing at the stub.
-* No colour-only states. Evidence class is `● Primary` / `● Technical` / `● Opinion` / `● News` with both a mark and a word. Disagreement rows carry the word "conflicting", not just amber.
-* Focus is a 2px `--research-red` outline with 2px offset, never removed, visible on paper.
-* Drawer traps focus, returns it to the originating citation on close, closes on `Esc`.
-* Pipeline progress is an `aria-live="polite"` region announcing each completed step once.
-* Keyboard map: `/` focus question · `1–5` switch canvas sections · `[` `]` previous/next source in drawer · `Esc` close · `Cmd/Ctrl+Enter` run research.
-* Scores are announced as "relevance, 4 of 5", matching the notches exactly.
+On mobile the bloom animation runs once and does not loop, saving battery.
 
 ---
 
-## 11. Priority table
-
-| Component / behaviour | V1 | V1.5 | V2 |
-|---|:--:|:--:|:--:|
-| ResearchQuestion, landing, examples | ● | | |
-| CategoryChips (shipped source routing) | ● | | |
-| ModeSelector (UI only, no backend routing) | ● | | |
-| DepthSelector with printed budgets | ● | | |
-| ResearchProgress with real step names | ● | | |
-| Brief / Sources / Gaps sections | ● | | |
-| SourceExplorer table + drawer | ● | | |
-| CitationMarker (opens drawer) | ● | | |
-| Report compile + enhance + export | ● | | |
-| The thread (margin rail + connectors) | | ● | |
-| EvidenceLedger with claim → source rows | | ● | |
-| Unified quality score + notches | | ● | |
-| Mode-driven backend routing | | ● | |
-| DisagreementPanel populated | | ● | |
-| Compare matrix | | | ● |
-| Source-independence clustering ("8 of 12 share one origin") | | | ● |
-| Saved sessions, history, "what changed?" | | | ● |
-
----
-
-# Workflow
-
-## User flow
-
-```mermaid
-flowchart TD
-    A["Landing<br/>question input"] --> B{"Question length<br/>>= 8 chars?"}
-    B -- no --> A
-    B -- yes --> C["Studio brief<br/>expanded textarea"]
-    C --> D["Mode select<br/>Explore | Compare | Evaluate | Academic | News"]
-    D --> E["Depth select<br/>Quick 4 | Standard 6 | Deep 10 per source"]
-    E --> F["POST /api/research/multi"]
-    F --> G{"Cache hit<br/>key v5-categories?"}
-    G -- yes --> I["Results canvas"]
-    G -- no --> H["Pipeline loader<br/>real step checklist"]
-    H --> I
-    I --> J["Brief"]
-    I --> K["Evidence"]
-    I --> L["Sources"]
-    I --> M["Disagreements"]
-    I --> N["Gaps"]
-    J --> O["Click [S04]"]
-    K --> O
-    L --> O
-    O --> P["Source drawer<br/>provenance + quality"]
-    P --> Q["Open original"]
-    I --> R["POST /api/research/synthesize"]
-    R --> S{"use_llm?"}
-    S -- false --> T["Deterministic compile"]
-    S -- true --> U["One Gemini call"]
-    U -- fails --> T
-    T --> V["Report"]
-    U --> V
-    V --> W["Export MD / JSON / print PDF"]
-```
-
-## Backend gather flow
-
-```
-                        POST /api/research/multi
-                        { topic, limit, force_refresh, category? }
-                                    │
-                                    ▼
-                        ┌───────────────────────┐
-                        │ cache lookup          │   key: topic + limit +
-                        │ .cache/research/       │        category + sources
-                        │ TTL 86400s            │        (v5-categories)
-                        └───────┬───────────────┘
-                       hit ◄────┤────► miss
-                        │                │
-                        │                ▼
-                        │        LangGraph invoke (with_report=False)
-                        │                │
-                        │      ┌─────────┴─────────┬──────────┬──────────┐
-                        │      ▼                   ▼          ▼          ▼
-                        │  tavily_research   news_research  papers   github
-                        │   S · Tavily        N · GNews RSS  P · S2   G · GH
-                        │                                    OpenAlex  Search
-                        │                                    Crossref
-                        │                                    arXiv
-                        │      │                   │          │          │
-                        │      └─────────┬─────────┴──────────┴──────────┘
-                        │                ▼
-                        │            gather node
-                        │        merge lists + merge errors
-                        │        Annotated[dict, _merge_dicts]
-                        │                │
-                        │                ▼
-                        │            write cache
-                        └────────────────┤
-                                         ▼
-                                  JSON → React state
-                                         │
-                    ┌────────────────────┴────────────────────┐
-                    ▼                                         ▼
-        POST /api/research/synthesize              POST /api/research/export/*
-        use_llm=false → compile                    markdown | json | html(print)
-        use_llm=true  → 1 Gemini call
-                      → on failure, compile
-```
-
-A source node whose family is not in `state["sources"]` returns empty and makes no API call. Each family fails independently; a failed family shows in the UI as a struck-through step with its error, and the run still completes.
-
----
-
-# Features
-
-Each: purpose → input → output → status.
-
-| Feature | Purpose | Input | Output | Status |
-|---|---|---|---|---|
-| Multi-source gather | Get four evidence families in one pass without serial latency | topic, limit, active source set | normalised result lists per family + errors dict | **[SHIPPED]** |
-| Persona/category chips | Let the user pick the shape of evidence before spending API calls | chip selection | source set passed to graph (`research_categories.py`) | **[SHIPPED]** |
-| Research modes | Change the output shape, not just the filter | mode selection | V1: report template + section visibility. V1.5: backend routing | **[PLANNED]** (UI-first in V1) |
-| Depth control | Make cost legible and bounded | Quick / Standard / Deep | per-source limit 4 / 6 / 10 | **[SHIPPED]** |
-| Source quality score | Explain ranking instead of asserting it | source metadata, query terms | relevance, authority, recency, evidence → composite, bucketed to 5 notches | **[PLANNED]** (today: Tavily relevance, citation counts, GH stars) |
-| Evidence ledger | Tie claims to the sources that carry them | compiled findings + ranked sources | rows: claim, supporting `[Sxx]`, strength, class | **[PLANNED]** |
-| Source explorer | Let the reader audit the whole set, not just what was quoted | all gathered sources | ruled table: code, title, type, date, score; row opens drawer | **[SHIPPED]** |
-| Source drawer | Show provenance for one source | source id | why-ranked reason, quality grid, dates, original link | **[SHIPPED]** |
-| Research brief | Give a usable answer before the report exists | ranked sources | short answer + supporting source counts + citations | **[SHIPPED]** |
-| Compare matrix | Put two options against shared criteria | Compare-mode results | criteria × option grid with per-cell citations | **[PLANNED]** |
-| Disagreements | Surface conflict instead of averaging it away | synthesis output | opposing positions + why they may differ + evidence strength | **[PLANNED]** |
-| Research gaps | Name what the source set does not cover | ranked sources | numbered open questions | **[SHIPPED]** (deterministic, thin) |
-| Report compile | Produce a cited report with zero LLM cost | sources on screen | exec summary, key findings, news, papers, gaps, sources | **[SHIPPED]** |
-| Report enhance | Improve prose quality in one bounded call | compiled report + sources, `use_llm: true` | Gemini structured rewrite, compile as fallback | **[SHIPPED]** |
-| Export | Get the work out of the app | report object | Markdown, JSON, HTML for print/PDF | **[SHIPPED]** |
-| Cache | Never pay twice for the same question | topic, limit, category, sources | cached JSON, 24h TTL, `force_refresh` bypass | **[SHIPPED]** |
-
----
-
-# Screens
-
-Every screen below lists purpose, layout, components, and states.
-
-## A. Landing
-
-**Purpose** — take a research question in under ten seconds and set expectations about what comes back.
-
-```
-┌──────────────────────────────────────────────────────────────────────┐
-│  ATELIER                                          about   github     │
-│                                                                      │
-│  ── RESEARCH DESK ────────────────────────────────────────────       │
-│                                                                      │
-│      What are you                                                    │
-│      investigating?                          ← Bodoni 44/1.05        │
-│                                                                      │
-│  ┌────────────────────────────────────────────────────────────┐      │
-│  │ Type a question. Not keywords.                             │      │
-│  └────────────────────────────────────────────────────────────┘      │
-│    ─────────────────────────────────────────────────────────         │
-│                                                                      │
-│  MODE   Explore │ Compare │ Evaluate │ Academic │ News               │
-│         ▔▔▔▔▔▔▔                                                      │
-│  DEPTH  Quick        Standard      Deep                              │
-│         4/source     6/source      10/source                         │
-│                                                                      │
-│                                        [ Start research → ]          │
-│                                                                      │
-│  ── TRY ONE ──────────────────────────────────────────────────       │
-│  Explore   Where are AI agent frameworks converging in 2026?         │
-│  Compare   RAG vs long-context models for enterprise search          │
-│  Academic  What does recent work say about multimodal RAG?           │
-│  News      What shipped in open-weight models this month?            │
-└──────────────────────────────────────────────────────────────────────┘
-```
-
-**Components** — `ResearchQuestion`, `ModeSelector`, `DepthSelector`, example list.
-**States** — *empty*: placeholder reads "Type a question. Not keywords." · *short input*: submit disabled, hint under the rule reads "Give it a full question, at least a few words." · *submitting*: button label becomes "Starting" and the rule turns red · *API key missing*: Deep disabled with the reason printed inline, not hidden in a tooltip.
-
-## B. Studio brief
-
-**Purpose** — a second look at the question before spending calls, with the run parameters stated plainly.
-
-```
-┌──────────────────────────────────────────────────────────────────────┐
-│  ATELIER · brief                                            close ×  │
-├──────────────────────────────────────────────────────────────────────┤
-│  QUESTION                                                            │
-│  ┌────────────────────────────────────────────────────────────┐      │
-│  │ Does retrieval still outperform long-context models for    │      │
-│  │ enterprise search in 2026?                                 │      │
-│  │                                                            │      │
-│  └────────────────────────────────────────────────────────────┘      │
-│                                                                      │
-│  MODE      Compare        ▸ criteria, both sides, trade-offs         │
-│  DEPTH     Standard       ▸ 6 per source                             │
-│  SOURCES   web · papers · github          (AI Engineer)              │
-│  BUDGET    up to 18 results · 0 LLM calls until you ask              │
-│                                                                      │
-│  [ ] Force refresh (ignore the 24-hour cache)                        │
-│                                                                      │
-│                          [ Cancel ]   [ Run research → ]             │
-└──────────────────────────────────────────────────────────────────────┘
-```
-
-**Components** — `ResearchQuestion` (expanded), `ModeSelector`, `DepthSelector`, `CategoryChips`, force-refresh checkbox.
-**States** — *default* · *cached run available*: a green note reads "Cached 3 hours ago. Runs instantly unless you force refresh." · *editing question*: budget line recalculates live.
-
-## C. Loading
-
-**Purpose** — show real work, named. Never "AI is thinking".
-
-```
-┌──────────────────────────────────────────────────────────────────────┐
-│  "Does retrieval still outperform long-context models…"   COMPARE    │
-├──────────────────────────────────────────────────────────────────────┤
-│                                                                      │
-│   RESEARCH / 01                              ← mono folio, red rule  │
-│   ───────────                                                        │
-│                                                                      │
-│   ✓  Web search · Tavily                        6 results    1.2s    │
-│   ✓  News · Google News RSS                     4 results    0.8s    │
-│   ◐  Papers · Semantic Scholar, OpenAlex, arXiv    …                 │
-│   ·  GitHub · Search API                        queued               │
-│   ·  Gather and dedupe                          queued               │
-│                                                                      │
-│   ─────────────────────────────────────────────────                  │
-│   10 sources so far · 2 of 4 families in                             │
-│                                                                      │
-└──────────────────────────────────────────────────────────────────────┘
-```
-
-**Components** — `RunningHead`, `ResearchProgress`.
-**States** — *queued* (`·`, ink-3) · *running* (`◐`, red) · *done* (`✓`, green, with count and elapsed) · *failed* (`✕`, amber, error text inline, run continues) · *cached* (whole list collapses to one line: "Loaded from cache · 3h old · Refresh") · *all failed*: error screen with the question preserved and a Retry that keeps mode and depth.
-
-## D. Results header
-
-**Purpose** — anchor the question and state the shape of the evidence before any claim is read.
-
-```
-┌──────────────────────────────────────────────────────────────────────┐
-│  ATELIER · "Does retrieval still outperform long-context…"  COMPARE  │  sticky
-├──────────────────────────────────────────────────────────────────────┤
-│                                                                      │
-│  Does retrieval still outperform                                     │
-│  long-context models for enterprise search?      ← Bodoni 44         │
-│                                                                      │
-│  24 sources · web 8 · news 4 · papers 9 · github 3 · 17 Aug 2026     │
-│  Standard depth · cached 3h ago · [ Refresh ]                        │
-│  ──────────────────────────────────────────────────────────────      │
-│  BRIEF   EVIDENCE   SOURCES   DISAGREEMENTS   GAPS                   │
-│  ▔▔▔▔▔                                                               │
-└──────────────────────────────────────────────────────────────────────┘
-```
-
-**States** — *fresh* · *cached* (age shown, refresh offered) · *partial* (amber line: "GitHub failed. 3 of 4 families returned.") · *thin* (fewer than 5 sources: "Thin evidence. Try Deep depth or a broader question.").
-
-## E. Brief tab
-
-**Purpose** — the usable answer, before and independent of the report.
-
-```
-┌──────────┬────────────────────────────────────────┬──────────────────┐
-│ BRIEF ▌  │  THE SHORT ANSWER                      │  CITED HERE      │
-│ Evidence │  ──────────────────                    │  ──────────      │
-│ Sources  │  For enterprise search, retrieval      │  [S04] anyscale  │
-│ Disagree │  still wins on cost and freshness,     │  eng · Jun 2026  │
-│ Gaps     │  while long context wins on multi-     │  ▌▌▌▌▌           │
-│          │  document reasoning. Most 2026         │  ─────────       │
-│ ──────   │  deployments run both [S04][P02].╌╌╌╌╌╌╌╌╌╌╮[P02] arXiv    │
-│ 24 srcs  │                                        │  ╰ 2601.08812    │
-│ 4 fams   │  ── WHAT THE SOURCES AGREE ON ──       │  ▌▌▌▌·           │
-│          │  1  Latency favours retrieval at       │  ─────────       │
-│          │     scale. 6 sources [S01][S04][P02]   │  [P07] OpenAlex  │
-│          │  2  Context windows removed most       │  ▌▌▌··           │
-│          │     chunking work. 4 sources [P07]     │                  │
-│          │                                        │                  │
-│          │  ── WHERE IT IS THIN ──                │                  │
-│          │  Cost at production volume is claimed  │                  │
-│          │  more than measured. 1 source [N03].   │                  │
-└──────────┴────────────────────────────────────────┴──────────────────┘
-```
-
-**Components** — `CanvasNav`, `ResearchBrief`, `CitationMarker`, `SourceStub`, the thread.
-**States** — *compiled* (default, deterministic) · *enhanced* (small mono note: "Rewritten by Gemini · one call · sources unchanged") · *degraded* (amber: "Enhance failed. Showing the compiled brief.") · *loading* (real text renders progressively, no shimmer) · *empty* (no sources: "Nothing came back. Try broader wording or Deep depth.").
-
-## F. Evidence tab
-
-**Purpose** — one row per claim, with what backs it and how strongly. This is the ledger, so it reads as a ledger: hanging indents and rules, not cards.
-
-```
-│  EVIDENCE LEDGER                          12 claims · 24 sources     │
-│  ─────────────────────────────────────────────────────────────────   │
-│                                                                      │
-│  01  Retrieval keeps per-query cost lower at enterprise volume       │
-│      supported by  [S01] [S04] [P02] [P07]        ● Technical        │
-│      strength      ▌▌▌▌·   strong · 4 independent domains            │
-│  ─────────────────────────────────────────────────────────────────   │
-│  02  Long context reduces engineering work on chunking               │
-│      supported by  [P07] [G02]                    ● Primary          │
-│      strength      ▌▌▌··   moderate · 2 sources                      │
-│  ─────────────────────────────────────────────────────────────────   │
-│  03  Long context degrades on multi-hop retrieval past ~200k         │
-│      supported by  [P02]                          ● Primary          │
-│      strength      ▌▌···   single source · treat as unconfirmed      │
-│      ⚠ conflicting  see Disagreements                                │
-│  ─────────────────────────────────────────────────────────────────   │
-```
-
-**Components** — `EvidenceLedger`, `CitationMarker`, `ScoreNotch`, evidence-class mark.
-**States** — *populated* · *single-source claim* (amber word "unconfirmed", never silent) · *conflicting* (amber mark + link to Disagreements) · *empty* (V1 placeholder, see §I) · *loading* (rows render as they compile).
-
-## G. Sources tab
-
-**Purpose** — audit the entire set, sort it, and get into any one of them.
-
-```
-│  SOURCES                                                             │
-│  web 8   news 4   papers 9   github 3            filter: all ▾       │
-│  ─────────────────────────────────────────────────────────────────   │
-│  CODE  TITLE                              TYPE    DATE      SCORE    │
-│  ─────────────────────────────────────────────────────────────────   │
-│  S01   Retrieval at scale: what we kept   web     2026-06   ▌▌▌▌▌    │
-│  P02   Long-context limits in multi-hop…  paper   2026-01   ▌▌▌▌·    │
-│  P07   A survey of multimodal RAG         paper   2025-11   ▌▌▌▌·    │
-│  N03   Vendor claims 90% cost cut         news    2026-08   ▌▌···    │
-│  G02   langgraph/retrieval-bench          github  2026-07   ▌▌▌··    │
-│  ─────────────────────────────────────────────────────────────────   │
-│  Sorted by score. Click a row for provenance.                        │
-```
-
-Row height 44px, hairline between rows, hover fills with `--ink-wash`, no zebra when under 8 rows.
-
-**Components** — `SourceExplorer`, `ScoreNotch`, family counts, filter.
-**States** — *loading* (rows stream in per family as the graph returns) · *populated* · *filtered* (count updates in the header) · *family failed* (family shown in the count line as "github ✕ failed") · *empty*.
-
-## H. Source drawer
-
-**Purpose** — answer "why is this here, and can I trust it?" without leaving the canvas.
-
-```
-                          ┌────────────────────────────────────────┐
-                          │  [P02]                          close ×│
-                          │  ──────────────────────────────────────│
-                          │  Long-context limits in multi-hop      │
-                          │  question answering                    │
-                          │                                        │
-                          │  arXiv · 2601.08812 · 14 Jan 2026      │
-                          │  ● Primary / academic evidence         │
-                          │                                        │
-                          │  WHY THIS SOURCE                       │
-                          │  Matches "long context" and "multi-hop"│
-                          │  in title and abstract. 41 citations.  │
-                          │  Published within 8 months.            │
-                          │                                        │
-                          │  QUALITY                               │
-                          │  Relevance   ▌▌▌▌▌  high               │
-                          │  Authority   ▌▌▌▌·  strong             │
-                          │  Recency     ▌▌▌▌▌  high               │
-                          │  Evidence    ▌▌▌▌·  strong             │
-                          │                                        │
-                          │  CITED IN                              │
-                          │  Claim 01, Claim 03                    │
-                          │                                        │
-                          │  [ Open original ↗ ]                   │
-                          └────────────────────────────────────────┘
-```
-
-**Components** — `SourceDrawer`, `ScoreNotch`, evidence-class mark, `CitationMarker` back-links.
-**States** — *open* · *preview unavailable* ("No abstract returned. Open the original.") · *score unavailable* (notches render as `·····` with the word "not scored", never as zero) · *dead link* (amber: "Original did not respond. Try the archive link.") · *closing* (focus returns to the citation that opened it).
-
-## I. Disagreements and Gaps
-
-**Purpose** — hold the space honestly in V1. An empty section that explains itself is better than a section that fakes output.
-
-```
-│  DISAGREEMENTS                                                       │
-│  ─────────────────────────────────────────────────────────────────   │
-│                                                                      │
-│      Not built yet.                                                  │
-│                                                                      │
-│      Atelier will compare positions across sources here and show     │
-│      where credible sources reach different conclusions. It needs    │
-│      the evidence layer first, so it lands with V1.5.                │
-│                                                                      │
-│      Meanwhile: claim 03 in Evidence is marked conflicting.          │
-│      ────────────────────────────────────────────────                │
-│                                                                      │
-│  GAPS                                                                │
-│  ─────────────────────────────────────────────────────────────────   │
-│  1  No source measures cost at production volume. All four cost      │
-│     claims trace to vendor material.                                 │
-│  2  Benchmarks reuse the same two datasets [P02][P07].               │
-│  3  Nothing published after June 2026 on hybrid deployment.          │
-```
-
-**States** — Disagreements: *planned placeholder* (V1) → *populated* (V1.5) · Gaps: *populated* · *none found* ("The set covers the question evenly. That is unusual, check the source list.") · *thin set* ("Too few sources to judge coverage.").
-
----
-
-# Rules
-
-1. **Evidence over AI visibility.** Never make the model the headline. "One Gemini call" is a footnote, not a badge.
-2. **Sources stay near claims.** If a claim and its citation are more than one visual move apart, the layout is wrong.
-3. **Do not hide uncertainty.** Single-source claims say so in words. Failed families stay on screen.
-4. **Typography before colour.** Solve hierarchy with size, weight, and space first. Reach for ink last.
-5. **No fake precision.** Scores bucket to five notches. Never 87.4%. Unknown renders as "not scored", never as zero.
-6. **Whitespace is the hierarchy.** Sections are separated by air and a hairline, not by boxes.
-7. **Not everything is a card.** Ranked things are rows. Peer things are cards. Sources are ranked.
-8. **Useful before the report exists.** The brief must stand alone if the user never clicks Compile.
-9. **Modes change output shape, not just filters.** If a mode only reorders the same sections, it is not a mode.
-10. **Name the real work.** Loaders, errors, and empty states say what actually happened, in the product's voice.
-
----
-
-# Design tokens
+# 13. Tokens
 
 ```css
 :root {
-  /* ── paper and ink ─────────────────────────────── */
-  --paper:            #F5F1E8;
-  --paper-2:          #EDE7DA;
-  --paper-3:          #E2DBCB;
-  --ink:              #171717;
-  --ink-2:            #57534B;
-  --ink-3:            #8A8377;
-  --ink-wash:         rgb(23 23 23 / 0.06);
+  /* pigments */
+  --pig-web:      #2E6E8E;
+  --pig-news:     #D8592F;
+  --pig-papers:   #6B4E9B;
+  --pig-github:   #2F7F63;
+  --pig-gold:     #C79A26;
 
-  /* ── functional inks ───────────────────────────── */
-  --research-red:     #B23124;
-  --evidence-blue:    #2C4A7C;
-  --verified-green:   #3F6B4A;
-  --warning-amber:    #9C6B1E;
+  /* mixes (flat fallbacks for Plain view) */
+  --mix-web-papers:  #2A4A6B;
+  --mix-web-github:  #276B6E;
+  --mix-papers-news: #8A4F63;
+  --mix-all:         #1F3A46;
 
-  /* ── type ──────────────────────────────────────── */
-  --font-display: "Bodoni Moda", "Didot", Georgia, serif;
-  --font-ui:      "Instrument Sans", system-ui, -apple-system, sans-serif;
-  --font-mono:    "Courier Prime", "SFMono-Regular", ui-monospace, monospace;
+  /* ground and ink */
+  --ground:   #FBFAF7;
+  --ground-2: #F2EFE9;
+  --ground-3: #E7E2D8;
+  --deep:     #14161A;
+  --ink:      #14161A;
+  --ink-2:    #4E5259;
+  --ink-3:    #878B92;
 
-  --t-display: 2.75rem;  --lh-display: 1.05;
-  --t-title:   1.875rem; --lh-title:   1.15;
-  --t-answer:  1.375rem; --lh-answer:  1.45;
-  --t-lead:    1.125rem; --lh-lead:    1.55;
-  --t-body:    1rem;     --lh-body:    1.6;
-  --t-small:   0.875rem; --lh-small:   1.5;
-  --t-eyebrow: 0.6875rem;
-  --t-mono:    0.75rem;
+  /* type */
+  --font-display: "Fraunces", Georgia, serif;
+  --font-ui:      "Geist Sans", system-ui, sans-serif;
+  --font-mono:    "Geist Mono", ui-monospace, monospace;
 
-  --tracking-eyebrow: 0.14em;
-  --tracking-mono:    0.02em;
-  --measure:          68ch;
+  --t-hero:   clamp(2.75rem, 7vw, 5.5rem);
+  --t-h1:     clamp(2rem, 4vw, 3.5rem);
+  --t-h2:     clamp(1.625rem, 3vw, 2.375rem);
+  --t-h3:     1.5rem;
+  --t-lead:   1.3125rem;
+  --t-body:   1.0625rem;
+  --t-small:  0.875rem;
+  --t-kicker: 0.75rem;
+  --t-mono:   0.8125rem;
+  --track-kicker: 0.12em;
+  --track-hero:  -0.03em;
 
-  /* ── space ─────────────────────────────────────── */
-  --s-1: 4px;  --s-2: 8px;  --s-3: 12px; --s-4: 16px;
-  --s-5: 24px; --s-6: 32px; --s-7: 48px; --s-8: 64px; --s-9: 96px;
+  /* space */
+  --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:24px;
+  --s6:32px; --s7:48px; --s8:64px; --s9:96px; --s10:128px;
 
-  /* ── layout ────────────────────────────────────── */
-  --head-h:      48px;
-  --rail-w:      180px;
-  --margin-w:    280px;
-  --column-max:  640px;
-  --drawer-w:    420px;
+  /* layout */
+  --max-w:      1280px;
+  --measure:    62ch;
+  --measure-desk: 72ch;
+  --header-h:   56px;
+  --rail-w:     200px;
+  --drawer-w:   440px;
 
-  /* ── line and edge ─────────────────────────────── */
-  --rule:        0.5px solid var(--paper-3);
-  --rule-strong: 1px solid var(--ink);
-  --radius:      2px;
-  --focus:       2px solid var(--research-red);
-  --focus-off:   2px;
+  /* edge */
+  --hair: 1px solid var(--ground-3);
+  --r-none: 0;
+  --r-bloom: 999px;
+  --focus: 2px solid currentColor;
 
-  /* ── motion ────────────────────────────────────── */
-  --ease:        cubic-bezier(.2,.6,.2,1);
-  --d-fast:      150ms;
-  --d-base:      200ms;
-  --d-drawer:    220ms;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  :root { --d-fast: 0ms; --d-base: 80ms; --d-drawer: 0ms; }
-  * { animation: none !important; transition-duration: var(--d-base) !important; }
+  /* motion */
+  --ease-wet: cubic-bezier(.16,.84,.34,1);
+  --ease-ui:  cubic-bezier(.2,.6,.2,1);
+  --d-micro:  160ms;
+  --d-ui:     240ms;
+  --d-reveal: 420ms;
+  --d-bloom:  2400ms;
 }
 ```
 
-Evidence-class marks:
+Bloom edge filter:
 
-```css
-.class-primary   { color: var(--evidence-blue); }   /* ● Primary / academic */
-.class-technical { color: var(--ink); }             /* ● Technical analysis */
-.class-opinion   { color: var(--warning-amber); }   /* ● Opinion */
-.class-news      { color: var(--ink-3); }           /* ● News coverage */
+```html
+<filter id="wet-web">
+  <feTurbulence type="fractalNoise" baseFrequency="0.012" numOctaves="3" seed="1"/>
+  <feDisplacementMap in="SourceGraphic" scale="26" xChannelSelector="R" yChannelSelector="G"/>
+  <feGaussianBlur stdDeviation="1.2"/>
+</filter>
+```
+
+Each pigment group: `mix-blend-mode: multiply; opacity: .82;` on a `--ground` backdrop. Seeds 1–4 per family so no two blooms have the same edge.
+
+Scroll reveal:
+
+```js
+const io = new IntersectionObserver((entries) => {
+  entries.forEach((e) => e.isIntersecting && e.target.classList.add("is-in"));
+}, { threshold: 0.35, rootMargin: "0px 0px -10% 0px" });
+document.querySelectorAll("[data-reveal]").forEach((el) => io.observe(el));
 ```
 
 ---
 
-# Technical constraints the design must respect
+# 14. Feature status
 
-| Constraint | Design consequence |
+| Feature | Purpose | Status |
+|---|---|---|
+| Parallel multi-source gather | Four families in one pass | **SHIPPED** |
+| Persona/category routing | Chip picks which families run | **SHIPPED** |
+| Depth budgets 4 / 6 / 10 | Bounded, printed cost | **SHIPPED** |
+| Source explorer + drawer | Audit every source, see why it ranked | **SHIPPED** |
+| Research brief | Usable answer before the report | **SHIPPED** |
+| Deterministic report compile | Cited report, zero LLM cost | **SHIPPED** |
+| Gemini enhance | One structured call, compile as fallback | **SHIPPED** |
+| Export MD / JSON / print PDF | Handoff | **SHIPPED** |
+| Disk cache, `force_refresh` | Never pay twice | **SHIPPED** |
+| Research gaps | Deterministic, thin | **SHIPPED** |
+| Gather bloom (all five contexts) | Signature + honest status | **PLANNED** |
+| Unified quality score → bloom radius | Explain ranking | **PLANNED** |
+| Evidence layer, claim → families | Mini blooms, agreement counts | **PLANNED** |
+| Research modes with backend routing | Modes change output shape | **PLANNED** |
+| Conflicts panel | Off-register pair, populated | **PLANNED** |
+| Compare matrix | Criteria grid | **PLANNED** |
+| Source-independence clustering | "8 of 12 share one origin" | **PLANNED** |
+
+---
+
+# 15. Constraints the design must respect
+
+| Constraint | Consequence |
 |---|---|
-| `POST /api/research/multi { topic, limit, force_refresh, category? }` | Mode is UI-only in V1. The ModeSelector must not imply backend routing it does not have; Compare and Evaluate carry a "shapes the report, not the search yet" note. |
-| `POST /api/research/synthesize { sources…, use_llm }` | Report is a separate, explicit action. Never auto-run it. The Enhance control states "one call" next to it. |
-| Depth limits: quick=4, standard=6, deep=10 per source | The literal number is printed under each depth option. No vague "more thorough" copy. |
-| Source codes S=web, N=news, P=paper, G=GitHub | Codes are the primary identifier everywhere: citations, rail stubs, drawer title, exports. Never rename them in the UI. |
-| Cache key `v5-categories`, TTL 24h, not per user | Cache state is shown with an age and a Refresh, and copy never implies "your history". |
-| Errors merge per family, run still completes | Every screen has a partial-result state. No all-or-nothing error page except total failure. |
-| No auth, no saved history, session state only | No "Saved", no "Recent", no account affordances anywhere. Export is the only way out, so ReportBar is always reachable. |
-| Compile is deterministic, enhance is optional | Two visually distinct report states, with the enhanced one labelled. Compiled is never presented as AI output. |
+| `POST /api/research/multi { topic, limit, force_refresh, category? }` | Mode is UI-only today. Compare and Evaluate cards carry the honest badge. |
+| `POST /api/research/synthesize { sources…, use_llm }` | Report is a separate explicit action. Enhance says "one call" next to it. Never auto-run. |
+| Depth: quick 4, standard 6, deep 10 per source | The number is printed, not described as "more thorough". |
+| Codes S / N / P / G | Codes appear in chips, rows, drawer, exports. Never renamed in UI. |
+| Cache key `v5-categories`, 24h, not per user | Cache age is shown with Refresh. Copy never says "your history". |
+| Errors merge per family, run completes | Every screen has a partial state. Dry outline, not a hidden failure. |
+| No auth, no history, session only | No account chrome anywhere. "Nothing saved" is stated on the hero as a feature. |
 
 ---
 
-# Roadmap
+# 16. Rules
+
+1. Every shape encodes a value from the response. No decoration.
+2. Overlap means corroboration. Never fake an overlap for looks.
+3. Motion reports state. If it does not report state, cut it.
+4. Pigment marks, ink type. Body copy is never coloured.
+5. No fake precision. Five blooms, never 87.4%.
+6. Failures stay on screen as dry outlines.
+7. One italic word per headline, and only on the site.
+8. Plain view is a real view, tested every release.
+9. Modes change output shape, not just filters.
+10. Name the actual work. No "AI is thinking".
+
+---
+
+# 17. Roadmap
 
 | Phase | Ships | Design work |
 |---|---|---|
-| **1 · Desk** | Landing, studio brief, real pipeline loader, Brief / Sources / Gaps, source drawer, compile + enhance + export | Token system, type scale, running head, ruled explorer table, all empty and error states |
-| **2 · Thread** | Unified quality score, evidence ledger, margin rail with connectors, notch scores everywhere | The signature interaction, evidence-class marks, single-source warnings |
-| **3 · Modes** | Backend intent routing, per-mode report templates, per-mode section visibility, disagreements populated | ModeSelector loses its "UI only" note, DisagreementPanel, mode-specific section order |
-| **4 · Comparison** | Compare matrix, source-independence clustering | Criteria grid, origin-cluster mark on stubs ("8 of 12 share one origin") |
-| **5 · Return** | Persistence, saved sessions, follow-up, "what changed?" | Session index, diff view, first screens that assume a returning user |
+| **1 · Ink** | Token system, type, site hero, ask, families, footer | Pigment palette, sigil set, `GatherBloom` idle + preview |
+| **2 · Desk** | Desk under the new system: brief, sources, drawer, report bar | Bloom as pipeline loader, score blooms, family-tinted citation chips |
+| **3 · Evidence** | Evidence layer, unified scoring, agreement counts | Mini blooms per claim, conflict pair, populated gaps |
+| **4 · Modes** | Backend routing, per-mode report templates | Mode sigils go live, badges come off, per-mode section order |
+| **5 · Return** | Persistence, saved runs, "what changed?" | Run blooms as a session index — every past run is its own fingerprint |
 
 ---
 
-# What Atelier is NOT
+# 18. What Atelier is NOT
 
-* **Not a chatbot.** There is no message list, no turn-taking, no assistant persona. A question produces a document, not a reply.
-* **Not a Perplexity replacement.** It does not try to answer everything. It works on questions where the evidence needs to be inspected.
-* **Not an autonomous agent.** No ReAct loop, no self-directed re-querying, no unbounded tool use. The budget is fixed before the run starts.
-* **Not a dashboard.** No KPI tiles, no widget grid, no rearrangeable panels, no charts of things nobody asked about.
-* **Not a citation manager.** No library, no BibTeX collections, no tagging. Export is the handoff.
-* **Not a writing tool.** It produces a report; it does not help you draft around it.
-* **Not a multi-agent framework demo.** LangGraph is plumbing, and the UI never mentions it.
+* **Not a chatbot.** No message list, no turns, no assistant persona. A question produces a document.
+* **Not a Perplexity replacement.** It works on questions where the evidence needs inspecting, not on everything.
+* **Not an autonomous agent.** No ReAct loop, no self-directed re-querying. The budget is fixed before the run starts.
+* **Not a dashboard.** No KPI tiles, no widget grid, no charts nobody asked for.
+* **Not a citation manager.** No library, no BibTeX, no tags. Export is the handoff.
+* **Not a decoration exercise.** Every bloom on screen is data. Remove the data and the bloom goes with it.
 
 ---
 
-# Position vs adjacent tools
+# 19. Position
 
-Principles only. Nothing here is copied from any of these products.
+Principles only, nothing copied.
 
 | | Elicit | Litmaps | Consensus | Perplexity | **Atelier** |
 |---|---|---|---|---|---|
-| Primary object | Paper table | Citation graph | Claim + agreement meter | Conversational answer | **Question + evidence set** |
-| Source families | Papers | Papers | Papers | Web | **Web, news, papers, GitHub** |
-| Ranking transparency | Partial | Graph structure | Aggregated | Opaque | **Per-factor, shown in drawer** |
-| LLM usage | Per-paper extraction | None | Classification | Every turn | **One optional call** |
-| Handles disagreement | Weak | N/A | Explicit meter | Averaged away | **Named section, planned V1.5** |
-| Handles code / implementations | No | No | No | Incidental | **GitHub as a first-class family** |
-| Session model | Accounts, saved work | Accounts, maps | Accounts | Threads | **Stateless, export-first** |
-| Interaction model | Spreadsheet | Canvas graph | Search results | Chat | **Reading canvas with margin apparatus** |
+| Primary object | Paper table | Citation graph | Claim + meter | Chat answer | **Question + evidence set** |
+| Families | Papers | Papers | Papers | Web | **Web, news, papers, code** |
+| Ranking transparency | Partial | Graph shape | Aggregated | Opaque | **Per-factor, in the drawer** |
+| LLM usage | Per paper | None | Classification | Every turn | **One optional call** |
+| Conflict handling | Weak | N/A | Meter | Averaged away | **Named section, phase 3** |
+| Code / implementations | No | No | No | Incidental | **First-class family** |
+| Session model | Accounts | Accounts | Accounts | Threads | **Stateless, export-first** |
+| Visual model | Spreadsheet | Node graph | Search list | Chat | **Pigment overlap as corroboration** |
 
-Where Atelier deliberately gives something up: no library, no persistence, no paper-level extraction depth. What it takes in exchange: four evidence families in one pass, a visible reason behind every rank, and a bounded cost per question.
+Given up: library, persistence, paper-level extraction depth. Gained: four families in one pass, a visible reason behind every rank, bounded cost per question, and a status display that cannot lie.
 
 ---
 
-# Deliverable checklist
+# 20. Build checklist
 
-- [x] Every screen has purpose, layout, components, and empty/loading/error states
-- [x] Every feature tagged SHIPPED or PLANNED
-- [x] Tokens copy-paste ready as a CSS block
-- [x] Phase roadmap, five phases
-- [x] "What Atelier is NOT"
-- [x] Comparison vs Elicit / Litmaps / Consensus / Perplexity
-- [x] Mermaid user flow and ASCII backend gather flow
-- [x] Design system sections 1–11
+- [ ] Fraunces + Geist Sans + Geist Mono loaded, subset, `font-display: swap`
+- [ ] Token block in `globals.css`, Tailwind v4 `@theme` mapped to it
+- [ ] Sigil set drawn and inlined as React components
+- [ ] `GatherBloom` built once, driven by props for all five contexts
+- [ ] Pipeline wired to real LangGraph node completion, not fake timing
+- [ ] Plain view toggle, persisted, tested
+- [ ] `prefers-reduced-motion` path verified on every animated component
+- [ ] Every screen has empty, loading, partial, and error states written as sentences
+- [ ] Contrast audit passes AA on every pigment pairing
+- [ ] Hero under 180KB, LCP under 2.0s on 4G
+- [ ] No stock photos of people, no device mockups, no gradient meshes
