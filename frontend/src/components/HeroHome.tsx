@@ -1,5 +1,11 @@
 "use client";
 
+import {
+  PIPELINE_STEPS,
+  PRINCIPLES,
+  RESEARCH_MODES,
+} from "../lib/productConfig";
+
 const QUERIES = [
   {
     topic: "LangGraph multi-agent orchestration",
@@ -68,23 +74,7 @@ const LOGOS = [
   "LangGraph",
 ];
 
-const FLOW = [
-  {
-    step: "01",
-    title: "Get started",
-    body: "Enter a topic and pick a research type. Atelier chooses the right mix of web, news, papers, and GitHub.",
-  },
-  {
-    step: "02",
-    title: "Take action",
-    body: "Browse ranked findings as cards or a list — previews, scores, citations, and a news timeline.",
-  },
-  {
-    step: "03",
-    title: "Get the report",
-    body: "Compile a cited briefing with findings, gaps, and exports — Markdown, JSON, or PDF.",
-  },
-] as const;
+const FLOW = PIPELINE_STEPS;
 
 const FEATURES = [
   {
@@ -247,13 +237,14 @@ export default function HeroHome({ onResearch }: { onResearch: () => void }) {
       <section className="atelier-hero">
         <div className="hero-inner atelier-hero-grid">
           <div className="atelier-hero-copy">
-            <p className="hero-kicker rise">Research desk · 2026</p>
+            <p className="hero-kicker rise">Research desk</p>
             <h1 className="atelier-hero-title rise" style={{ animationDelay: "0.05s" }}>
-              Get a cited report from live sources.
+              Investigate the evidence behind a question.
             </h1>
             <p className="atelier-hero-lead rise" style={{ animationDelay: "0.1s" }}>
-              Search the web, headlines, papers, and GitHub in parallel — then
-              turn the findings into a briefing you can browse, cite, and download.
+              Atelier gathers web, news, papers, and GitHub in parallel — ranks sources,
+              compiles a cited report, and uses Gemini only when you ask for one enhance pass.
+              Not a chatbot. Not Perplexity.
             </p>
             <div className="hero-actions rise" style={{ animationDelay: "0.16s" }}>
               <button type="button" className="btn-3d" onClick={onResearch}>
@@ -293,13 +284,37 @@ export default function HeroHome({ onResearch }: { onResearch: () => void }) {
         </div>
       </section>
 
-      <section id="how-it-works" className="section-band">
+      <section id="modes" className="section-band">
+        <div className="hero-inner section-band-inner">
+          <div className="hero-section-head">
+            <p className="hero-kicker">Research modes</p>
+            <h2 className="hero-section-title">Five modes. Fixed budgets.</h2>
+            <p className="hero-section-lead">
+              Structured workflows — not an open-ended agent loop. Compare and Evaluate
+              shape the report template today; full routing lands in phase 2.
+            </p>
+          </div>
+          <div className="mode-grid">
+            {RESEARCH_MODES.map((mode) => (
+              <article key={mode.id} className="mode-card">
+                <p className="mode-card-label">{mode.label}</p>
+                <p className="mode-card-body">{mode.blurb}</p>
+                {mode.planned ? (
+                  <span className="mode-badge">{mode.plannedNote}</span>
+                ) : null}
+              </article>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section id="how-it-works" className="section-band section-band-quiet">
         <div className="hero-inner section-band-inner">
           <div className="hero-section-head">
             <p className="hero-kicker">Process</p>
-            <h2 className="hero-section-title">Three steps. One desk.</h2>
+            <h2 className="hero-section-title">Gather → rank → report.</h2>
             <p className="hero-section-lead">
-              From a topic to a finished report — without leaving the page.
+              LangGraph orchestrates parallel source nodes — no ReAct loop, no per-source LLM calls.
             </p>
           </div>
           <ol className="process-row">
@@ -316,15 +331,15 @@ export default function HeroHome({ onResearch }: { onResearch: () => void }) {
         </div>
       </section>
 
-      <section id="capabilities" className="section-band section-band-quiet">
+      <section id="capabilities" className="section-band">
         <div className="hero-inner section-band-inner">
           <div className="hero-section-head">
             <p className="hero-kicker">Sources</p>
             <h2 className="hero-section-title">
-              Visibility across the open web, the news, papers, and code.
+              Web, news, papers, and code — one parallel pass.
             </h2>
             <p className="hero-section-lead">
-              One automated pass. Four instruments. A report when you ask for it.
+              Each family fails independently. Errors stay visible; the run still completes.
             </p>
           </div>
         </div>
@@ -388,6 +403,20 @@ export default function HeroHome({ onResearch }: { onResearch: () => void }) {
             </div>
             <p className="report-sheet-foot">MD · JSON · PDF</p>
           </aside>
+        </div>
+      </section>
+
+      <section className="section-band section-band-quiet" aria-label="Principles">
+        <div className="hero-inner section-band-inner">
+          <div className="hero-section-head">
+            <p className="hero-kicker">Principles</p>
+            <h2 className="hero-section-title">Maximum quality per API call.</h2>
+          </div>
+          <ul className="principles-list">
+            {PRINCIPLES.map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
         </div>
       </section>
 

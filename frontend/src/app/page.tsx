@@ -8,6 +8,13 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import HeroHome from "../components/HeroHome";
 import {
+  DEPTH_PRESETS,
+  estimateSourceCount,
+  modeCategory,
+  RESEARCH_MODES,
+  type ResearchModeId,
+} from "../lib/productConfig";
+import {
   downloadReportJson,
   downloadReportMarkdown,
   openReportPrintPdf,
@@ -23,7 +30,7 @@ type ResearchCategory =
   | "founder"
   | "academic"
   | "news_desk";
-type TabKey = "report" | "overview" | SourceKey;
+type TabKey = "report" | "overview" | "gaps" | "disagreements" | SourceKey;
 type LayoutMode = "cards" | "list";
 
 interface ResearchItem {
@@ -237,6 +244,8 @@ const LOAD_STAGES = [
 
 const SOURCE_TAB_ORDER: TabKey[] = [
   "overview",
+  "gaps",
+  "disagreements",
   "tavily",
   "news",
   "papers",
@@ -963,6 +972,7 @@ export default function Home() {
   const [topic, setTopic] = useState("");
   const [limit, setLimit] = useState(6);
   const [category, setCategory] = useState<ResearchCategory>("general");
+  const [researchMode, setResearchMode] = useState<ResearchModeId>("explore");
   const [loadStage, setLoadStage] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<MultiSourceResearchResult | null>(null);
@@ -1081,7 +1091,11 @@ export default function Home() {
     if (result && result.news_results.length > 0) used.add("news");
     if (result && result.papers_results.length > 0) used.add("papers");
     return SOURCE_TAB_ORDER.filter(
-      (k) => k === "overview" || used.has(k as SourceKey),
+      (k) =>
+        k === "overview" ||
+        k === "gaps" ||
+        k === "disagreements" ||
+        used.has(k as SourceKey),
     );
   }, [result]);
 
@@ -1225,6 +1239,14 @@ export default function Home() {
     () => CATEGORIES.find((c) => c.id === category) ?? CATEGORIES[0],
     [category],
   );
+
+  const activeMode = RESEARCH_MODES.find((m) => m.id === researchMode) ?? RESEARCH_MODES[0]!;
+  const estSources = estimateSourceCount(limit, activeCategory.sources.length);
+
+  const handleModeChange = (modeId: ResearchModeId) => {
+    setResearchMode(modeId);
+    setCategory((prev) => modeCategory(modeId, prev));
+  };
 
   const activeItems: ResearchItem[] = useMemo(() => {
     if (!result) return [];
@@ -1390,22 +1412,35 @@ export default function Home() {
           >
             What should we look into?
           </h1>
-          <p style={{ margin: "1rem 0 0", color: "var(--ink-soft)", lineHeight: 1.6, maxWidth: "30rem" }}>
-            Pick a research type — we’ll pull the right mix of web, news, papers, and GitHub. Generate a report when you’re ready.
+          <p style={{ margin: "1rem 0 0", color: "var(--ink-soft)", lineHeight: 1.6, maxWidth: "36rem" }}>
+            Pick a research mode and source preset. Atelier gathers in parallel, caches for 24h,
+            and compiles a report without an LLM — enhance uses exactly one Gemini call.
           </p>
 
           <div style={{ marginTop: "2rem" }}>
-            <p
-              style={{
-                margin: "0 0 0.65rem",
-                fontSize: "0.66rem",
-                letterSpacing: "0.14em",
-                textTransform: "uppercase",
-                color: "var(--muted)",
-              }}
-            >
-              Research type
+            <p className="studio-section-label">Research mode</p>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
+              {RESEARCH_MODES.map((m) => (
+                <button
+                  key={m.id}
+                  type="button"
+                  className={`chip${researchMode === m.id ? " is-active" : ""}`}
+                  onClick={() => handleModeChange(m.id)}
+                  title={m.planned ? m.plannedNote : m.blurb}
+                >
+                  {m.label}
+                  {m.planned ? " · planned" : ""}
+                </button>
+              ))}
+            </div>
+            <p style={{ margin: "0.75rem 0 0", fontSize: "0.85rem", color: "var(--ink-soft)" }}>
+              {activeMode.blurb}
             </p>
+          </div>
+
+          {(researchMode === "explore" || researchMode === "compare") && (
+          <div style={{ marginTop: "1.75rem" }}>
+            <p className="studio-section-label">Source preset</p>
             <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
               {CATEGORIES.map((c) => (
                 <button
@@ -1420,9 +1455,10 @@ export default function Home() {
               ))}
             </div>
             <p style={{ margin: "0.75rem 0 0", fontSize: "0.85rem", color: "var(--ink-soft)" }}>
-              {activeCategory.blurb}
+              {activeCategory.blurb} — routes which families run (see README source router).
             </p>
           </div>
+          )}
 
           <label
             htmlFor="topic"
@@ -1498,24 +1534,26 @@ export default function Home() {
               flexWrap: "wrap",
             }}
           >
-            <label style={{ fontSize: "0.82rem", color: "var(--muted)", display: "inline-flex", gap: "0.5rem", alignItems: "center" }}>
-              Depth
-              <input
-                type="number"
-                min={1}
-                max={20}
-                value={limit}
-                onChange={(e) => setLimit(Number(e.target.value) || 6)}
-                style={{
-                  width: 56,
-                  border: "1px solid var(--line)",
-                  background: "var(--surface)",
-                  padding: "0.4rem",
-                  borderRadius: 0,
-                }}
-              />
-              <span style={{ fontSize: "0.72rem" }}>per source</span>
+            <label style={{ fontSize: "0.82rem", color: "var(--muted)", display: "block" }}>
+              <span className="studio-section-label" style={{ display: "block", marginBottom: "0.5rem" }}>
+                Depth
+              </span>
+              <span style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
+                {DEPTH_PRESETS.map((d) => (
+                  <button
+                    key={d.id}
+                    type="button"
+                    className={`chip${limit === d.id ? " is-active" : ""}`}
+                    onClick={() => setLimit(d.id)}
+                  >
+                    {d.label} ({d.sub})
+                  </button>
+                ))}
+              </span>
             </label>
+            <p className="studio-budget">
+              ≈ {estSources} sources max · compile 0 AI calls · enhance +1 Gemini call
+            </p>
             <div style={{ display: "flex", gap: "0.75rem" }}>
               <button type="button" className="btn-3d-ghost" onClick={() => setView("hero")}>
                 Back
@@ -1677,6 +1715,8 @@ export default function Home() {
             {(
               [
                 ["overview", "Overview", totals.all],
+                ["gaps", "Gaps", result.report?.open_questions?.length ?? 0],
+                ["disagreements", "Conflicts", 0],
                 ["tavily", "Web", totals.web],
                 ["news", "News", totals.news],
                 ["papers", "Papers", totals.papers],
@@ -1738,7 +1778,8 @@ export default function Home() {
                 >
                   ← Back to sources
                 </button>
-              </div>              {!result.report && !reportBusy && (
+              </div>
+              {!result.report && !reportBusy && (
                 <div
                   className="rise"
                   style={{
@@ -1780,7 +1821,7 @@ export default function Home() {
                       checked={useLlm}
                       onChange={(e) => setUseLlm(e.target.checked)}
                     />
-                    Enhance with AI (Gemini)
+                    Enhance with Gemini (1 call)
                   </label>
                   <div style={{ marginTop: "1.35rem", display: "flex", gap: "0.65rem", flexWrap: "wrap" }}>
                     <button type="button" className="btn-3d" onClick={() => generateReport(false)}>
@@ -2012,7 +2053,60 @@ export default function Home() {
             </div>
           )}
 
-          {tab !== "overview" && tab !== "report" && (
+          {tab === "gaps" && (
+            <div className="rise" key="gaps">
+              <h3
+                style={{
+                  fontFamily: "var(--font-display)",
+                  fontSize: "1.75rem",
+                  fontWeight: 500,
+                  margin: "0 0 1rem",
+                }}
+              >
+                Research gaps
+              </h3>
+              {result.report?.open_questions?.length ? (
+                <ol style={{ margin: 0, paddingLeft: "1.25rem", lineHeight: 1.65, color: "var(--ink-soft)" }}>
+                  {result.report.open_questions.map((q) => (
+                    <li key={q} style={{ marginBottom: "0.75rem" }}>
+                      {q}
+                    </li>
+                  ))}
+                </ol>
+              ) : (
+                <div className="planned-panel">
+                  {result.report
+                    ? "No open questions were identified for this run."
+                    : "Generate a report to surface research gaps and open questions from the retrieved source set."}
+                </div>
+              )}
+            </div>
+          )}
+
+          {tab === "disagreements" && (
+            <div className="rise" key="disagreements">
+              <h3
+                style={{
+                  fontFamily: "var(--font-display)",
+                  fontSize: "1.75rem",
+                  fontWeight: 500,
+                  margin: "0 0 1rem",
+                }}
+              >
+                Disagreements
+              </h3>
+              <div className="planned-panel">
+                Consensus and disagreement detection needs the evidence layer (phase 2).
+                Until then, inspect conflicting claims manually across sources — especially
+                when news and papers reach different conclusions.
+              </div>
+            </div>
+          )}
+
+          {tab !== "overview" &&
+            tab !== "report" &&
+            tab !== "gaps" &&
+            tab !== "disagreements" && (
             <div className="rise" key={tab}>
               <header
                 style={{

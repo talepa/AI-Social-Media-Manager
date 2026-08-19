@@ -14,6 +14,58 @@ The product UI is a paper-and-ink editorial desk (Bodoni Moda + Instrument Sans)
 
 ---
 
+## Quick start
+
+```bash
+cp .env.example .env          # add TAVILY_API_KEY at minimum
+cd backend && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt && cd ..
+cd frontend && npm install && cd ..
+./run.sh
+```
+
+Open **http://localhost:3000** → **Start research** → pick mode and depth → gather sources → **Generate report** (compile free, optional one Gemini enhance).
+
+---
+
+## Shipped today
+
+| Capability | Status |
+|---|---|
+| Parallel gather: web, news, papers, GitHub | **Shipped** |
+| Persona / category source routing | **Shipped** |
+| Depth budget (4 / 6 / 10 per source) | **Shipped** |
+| Disk cache (`v5-categories`, 24h) | **Shipped** |
+| Deterministic report compile | **Shipped** |
+| Optional Gemini enhance (one call) | **Shipped** |
+| Export Markdown, JSON, print PDF | **Shipped** |
+| Research modes (Compare, Evaluate report shape) | **Planned** |
+| Unified quality scores + evidence layer | **Planned** |
+| Consensus / disagreement sections | **Planned** |
+| Auth, saved history, PostgreSQL | **Planned** |
+
+---
+
+## Product UI (screens)
+
+The running app is a **single-page research desk** — not a chat thread.
+
+| Screen | Route | What the user does |
+|---|---|---|
+| **Landing** | `/` (hero) | Read how Atelier works; open the studio |
+| **Studio** | `/` (studio) | Enter question, pick **research mode**, **source preset**, and **depth**; start gather |
+| **Loader** | `/` (loading) | Wait while LangGraph runs parallel source nodes |
+| **Results** | `/` (results) | Browse sources by family, compile/enhance report, export |
+
+**Landing sections:** hero · pipeline · four source families · report deliverables · principles (not a Perplexity clone).
+
+**Studio controls:** mode (Explore / Compare / Evaluate / Academic / News) · source preset (General, AI Engineer, …) · depth (Quick 4 / Standard 6 / Deep 10) · printed budget (`≈ N results · 0–1 AI calls`).
+
+**Results tabs:** Overview · Web · News · Papers · GitHub · Report · Gaps (from `open_questions`) · Disagreements (placeholder until evidence layer ships).
+
+Typography: **Bodoni Moda** display + **Instrument Sans** body. Paper-and-ink editorial desk — see `design.md` for a separate experimental direction (not wired to this UI).
+
+---
+
 ## Product Direction
 
 Atelier should answer:
@@ -1074,20 +1126,46 @@ and displayed clearly in the UI. Parallel LangGraph nodes merge errors with `Ann
 
 # Frontend
 
-Current stack remains:
+Current stack:
 
 | Piece | Role |
 |---|---|
-| Next.js 16 | App Router / frontend |
-| React 19 | UI |
+| Next.js 16 | App Router — single-page research desk |
+| React 19 | UI state (hero → studio → loader → results) |
 | TypeScript | Types |
-| Tailwind v4 | Styling |
-| Bodoni Moda | Editorial display font |
-| Instrument Sans | Body font |
+| Tailwind v4 | Utility layer + editorial tokens in `globals.css` |
+| Bodoni Moda | Display headlines |
+| Instrument Sans | Body and UI |
 
-The browser talks to the API with `fetch` to `http://localhost:8001`. No Next.js API routes for research. The product UI lives in `frontend/src/app/page.tsx` (studio, loader, results) and `frontend/src/components/HeroHome.tsx` (landing).
+**Code map**
 
-Potential UI additions:
+| File | Role |
+|---|---|
+| `frontend/src/app/page.tsx` | Studio, loader, results, API calls |
+| `frontend/src/components/HeroHome.tsx` | Landing: modes, pipeline, sources, principles |
+| `frontend/src/lib/productConfig.ts` | Modes, depth presets, copy shared with README |
+| `frontend/src/lib/reportDownload.ts` | Export helpers |
+
+The browser calls `http://localhost:8001` directly (`fetch`). No Next.js API routes for research.
+
+### Studio controls (match README)
+
+```text
+Research mode   Explore | Compare | Evaluate | Academic | News
+Source preset   General | AI Engineer | Founder | … (Explore / Compare)
+Depth           Quick 4 | Standard 6 | Deep 10 per source
+Budget line     ≈ N sources · 0–1 AI calls
+```
+
+### Results sections
+
+```text
+Overview · Gaps · Conflicts · Web · News · Papers · GitHub · Report
+```
+
+Compare / Evaluate / Conflicts / unified scores are marked **planned** in the UI until phase 2 ships.
+
+Potential UI additions (README roadmap):
 
 ### Research mode selector
 
