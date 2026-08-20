@@ -1,3 +1,5 @@
+export type ResearchRunMode = "quick" | "research" | "deep" | "plan";
+
 export type ResearchCategory =
   | "general"
   | "ai_engineer"
@@ -5,4 +7,17 @@ export type ResearchCategory =
   | "academic"
   | "news_desk";
 
-export type SourceKey = "tavily" | "news" | "papers" | "github";
+export interface ResearchRoutingPlan {
+  topic: string;
+  search_query: string;
+  papers_search_query?: string | null;
+  domain: string;
+  intent: string;
+  run_mode: ResearchRunMode;
+  sources: ("tavily" | "news" | "papers" | "github")[];
+  limit: number;
+  confidence: number;
+  reason: string;
+  method: "rules" | "llm" | "fallback";
+  category: string;
+}

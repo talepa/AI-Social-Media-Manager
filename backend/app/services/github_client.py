@@ -16,6 +16,10 @@ import httpx
 from dotenv import load_dotenv
 
 from app.schemas.research import ResearchItem
+from app.services.github_utils import (
+    build_github_search_query,
+    filter_github_items,
+)
 
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "..", "..", "..", ".env"))
 
@@ -46,11 +50,11 @@ def search_github_repos(topic: str, limit: int = 8) -> List[ResearchItem]:
     if limit > 20:
         limit = 20
 
-    # Prefer relevant repos: topic words + stars boost via sort
-    query = f"{topic} in:name,description,readme"
+    query = build_github_search_query(topic)
+    fetch_n = min(max(limit * 3, 12), 30)
     url = (
         f"{GITHUB_SEARCH}?q={quote_plus(query)}"
-        f"&sort=stars&order=desc&per_page={limit}"
+        f"&sort=stars&order=desc&per_page={fetch_n}"
     )
 
     with httpx.Client(timeout=25.0, follow_redirects=True) as client:
@@ -68,7 +72,7 @@ def search_github_repos(topic: str, limit: int = 8) -> List[ResearchItem]:
             )
         payload = response.json()
 
-    items: List[ResearchItem] = []
+    raw: List[ResearchItem] = []
     for repo in payload.get("items") or []:
         full_name = (repo.get("full_name") or "").strip()
         name = (repo.get("name") or full_name or "").strip()
@@ -101,7 +105,7 @@ def search_github_repos(topic: str, limit: int = 8) -> List[ResearchItem]:
 
         avatar = ((repo.get("owner") or {}).get("avatar_url") or "").strip() or None
 
-        items.append(
+        raw.append(
             ResearchItem(
                 title=full_name or name,
                 url=html_url,
@@ -116,4 +120,8 @@ def search_github_repos(topic: str, limit: int = 8) -> List[ResearchItem]:
             )
         )
 
-    return items
+    filtered = filter_github_items(topic, raw, limit=limit, min_relevance=0.2)
+    if not filtered and raw:
+        filtered = filter_github_items(topic, raw, limit=limit, min_relevance=0.0)
+    logger.info("github search q=%r raw=%s kept=%s", query, len(raw), len(filtered))
+    return filtered

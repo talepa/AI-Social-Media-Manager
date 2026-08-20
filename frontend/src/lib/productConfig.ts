@@ -1,48 +1,36 @@
-import type { ResearchCategory } from "./productTypes";
+import type { ResearchRunMode } from "./productTypes";
 
-export type ResearchModeId = "explore" | "compare" | "evaluate" | "academic" | "news";
+export type { ResearchRunMode };
 
-export const RESEARCH_MODES: {
-  id: ResearchModeId;
+export const RUN_MODES: {
+  id: ResearchRunMode;
   label: string;
-  blurb: string;
-  category: ResearchCategory;
-  planned?: boolean;
-  plannedNote?: string;
+  hint: string;
+  icon: string;
 }[] = [
   {
-    id: "explore",
-    label: "Explore",
-    blurb: "General investigation — findings, sources, gaps, and conclusion.",
-    category: "general",
+    id: "quick",
+    label: "Quick",
+    hint: "Fast web scan · ~4 sources",
+    icon: "⚡",
   },
   {
-    id: "compare",
-    label: "Compare",
-    blurb: "Two or more options side by side in the report.",
-    category: "general",
-    planned: true,
-    plannedNote: "Shapes the report template — routing unchanged until phase 2.",
+    id: "research",
+    label: "Research",
+    hint: "Balanced evidence gather",
+    icon: "⌕",
   },
   {
-    id: "evaluate",
-    label: "Evaluate",
-    blurb: "Score a technology, product, or approach against evidence.",
-    category: "founder",
-    planned: true,
-    plannedNote: "Shapes the report template — routing unchanged until phase 2.",
+    id: "deep",
+    label: "Deep",
+    hint: "Maximum sources · thorough",
+    icon: "◈",
   },
   {
-    id: "academic",
-    label: "Academic",
-    blurb: "Papers first, then web for context.",
-    category: "academic",
-  },
-  {
-    id: "news",
-    label: "News",
-    blurb: "Recent headlines and current web coverage.",
-    category: "news_desk",
+    id: "plan",
+    label: "Plan",
+    hint: "Route + structured brief",
+    icon: "◎",
   },
 ];
 
@@ -53,31 +41,35 @@ export const DEPTH_PRESETS = [
 ] as const;
 
 export const PRINCIPLES = [
-  "Research-first — not a chatbot",
+  "Ask anything — we route sources for you",
   "Evidence over generic summaries",
-  "Deterministic processing by default",
-  "One optional Gemini call — not per source",
-  "Transparent sources and citations",
+  "Deterministic gather by default",
+  "One optional Gemini call for reports",
+  "Transparent routing and citations",
 ] as const;
 
 export const PIPELINE_STEPS = [
-  { step: "01", title: "Ask", body: "Enter a research question and pick a mode." },
-  { step: "02", title: "Route", body: "Source router picks web, news, papers, and/or GitHub." },
-  { step: "03", title: "Gather", body: "LangGraph runs families in parallel — one failure does not stop the rest." },
-  { step: "04", title: "Rank", body: "Results are deduped, scored, and ranked deterministically." },
-  { step: "05", title: "Report", body: "Compile for free, or enhance with exactly one Gemini call." },
+  { step: "01", title: "Ask", body: "Type your question — no category chips." },
+  { step: "02", title: "Route", body: "Rules infer domain, intent, and sources." },
+  { step: "03", title: "Gather", body: "Web, news, papers, GitHub in parallel." },
+  { step: "04", title: "Rank", body: "Dedupe, score, and rank deterministically." },
+  { step: "05", title: "Report", body: "Compile free, or enhance with one AI call." },
 ] as const;
 
 export function estimateSourceCount(limit: number, sourceCount: number): number {
   return limit * sourceCount;
 }
 
-export function modeCategory(
-  modeId: ResearchModeId,
-  fallback: ResearchCategory,
-): ResearchCategory {
-  const mode = RESEARCH_MODES.find((m) => m.id === modeId);
-  if (!mode) return fallback;
-  if (modeId === "explore" || modeId === "compare") return fallback;
-  return mode.category;
+export function formatDomain(domain: string): string {
+  return domain.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+export function formatSources(sources: string[]): string {
+  const labels: Record<string, string> = {
+    tavily: "Web",
+    news: "News",
+    papers: "Papers",
+    github: "GitHub",
+  };
+  return sources.map((s) => labels[s] ?? s).join(" · ");
 }

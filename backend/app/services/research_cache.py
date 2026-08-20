@@ -64,17 +64,20 @@ def multi_cache_key(
     *,
     category: str | None = None,
     sources: list[str] | None = None,
+    run_mode: str | None = None,
 ) -> str:
     cat = (category or "general").strip().lower()
     src = ",".join(sorted(s.strip().lower() for s in (sources or []) if s))
+    mode = (run_mode or "research").strip().lower()
     return _digest(
         [
             "multi",
-            "v5-categories",
+            "v8-quality",
             normalize_topic(topic),
             str(int(limit)),
             cat,
             src,
+            mode,
         ]
     )
 

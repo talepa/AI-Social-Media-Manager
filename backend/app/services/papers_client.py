@@ -49,6 +49,43 @@ def _s2_headers() -> dict:
     return headers
 
 
+def _topic_tokens(topic: str) -> set[str]:
+    stop = {
+        "the", "a", "an", "how", "will", "my", "and", "or", "for", "to", "in", "on",
+        "of", "what", "is", "are", "does", "do", "can", "i", "me", "we", "you",
+        "your", "this", "that", "with", "from", "about", "into", "help", "helps",
+    }
+    words = re.findall(r"[a-z0-9]{3,}", (topic or "").lower())
+    return {w for w in words if w not in stop}
+
+
+def _paper_relevance(topic: str, item: ResearchItem) -> float:
+    tokens = _topic_tokens(topic)
+    if not tokens:
+        return 1.0
+    text = _norm_title(item.title) + " " + _norm_title(item.content or "")
+    hits = sum(1 for t in tokens if t in text)
+    return hits / len(tokens)
+
+
+def _filter_by_relevance(
+    topic: str,
+    items: List[ResearchItem],
+    *,
+    min_score: float = 0.2,
+) -> List[ResearchItem]:
+    if not items:
+        return items
+    scored = [(item, _paper_relevance(topic, item)) for item in items]
+    kept = [item for item, score in scored if score >= min_score]
+    if kept:
+        return kept
+    # Keep best matches if every paper missed the bar
+    scored.sort(key=lambda pair: pair[1], reverse=True)
+    top = [item for item, score in scored[:3] if score > 0]
+    return top
+
+
 def _norm_title(title: str) -> str:
     t = (title or "").lower().strip()
     t = re.sub(r"[^a-z0-9\s]", "", t)
@@ -399,7 +436,8 @@ def search_papers(topic: str, limit: int = 5) -> List[ResearchItem]:
                 errors.append(f"{name}: {exc}")
 
     merged = _merge_papers(groups, limit)
+    merged = _filter_by_relevance(topic, merged)
     if not merged:
-        detail = "; ".join(errors) if errors else "no results"
-        raise RuntimeError(f"No academic papers found ({detail})")
+        detail = "; ".join(errors) if errors else "no relevant results"
+        raise RuntimeError(f"No relevant academic papers found ({detail})")
     return merged

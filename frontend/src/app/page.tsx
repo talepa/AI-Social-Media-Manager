@@ -1,19 +1,32 @@
 "use client";
 
 /**
- * Interactive research product UI:
- * Hero → Research studio → Loader → Report + sources
+ * Prompt-first research UI with auto-routing.
  */
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import HeroHome from "../components/HeroHome";
+import GeminiThread, {
+  type ChatMessage,
+  type ResearchProposal,
+} from "../components/GeminiThread";
+import ChatSidebar from "../components/ChatSidebar";
+import AtelierMark from "../components/AtelierMark";
 import {
-  DEPTH_PRESETS,
-  estimateSourceCount,
-  modeCategory,
-  RESEARCH_MODES,
-  type ResearchModeId,
-} from "../lib/productConfig";
+  deleteChatSession,
+  getChatSession,
+  loadChatSessions,
+  sessionTitle,
+  upsertChatSession,
+  type StoredChatSession,
+} from "../lib/chatHistory";
+import { sourceTabsForResult } from "../components/SourcePanel";
+import type { DisplayTab } from "../lib/partitionResults";
+import {
+  getExpandPermission,
+  setExpandPermission,
+} from "../lib/researchPermission";
+import { formatDomain, formatSources } from "../lib/productConfig";
+import type { ResearchRoutingPlan, ResearchRunMode } from "../lib/productTypes";
 import {
   downloadReportJson,
   downloadReportMarkdown,
@@ -22,15 +35,8 @@ import {
 
 const API_BASE = "http://localhost:8001";
 
-type View = "hero" | "studio" | "loading" | "results";
+type View = "home" | "session";
 type SourceKey = "tavily" | "news" | "papers" | "github";
-type ResearchCategory =
-  | "general"
-  | "ai_engineer"
-  | "founder"
-  | "academic"
-  | "news_desk";
-type TabKey = "report" | "overview" | "gaps" | "disagreements" | SourceKey;
 type LayoutMode = "cards" | "list";
 
 interface ResearchItem {
@@ -106,6 +112,7 @@ interface ResearchReport {
 interface MultiSourceResearchResult {
   topic: string;
   category?: string | null;
+  routing?: ResearchRoutingPlan | null;
   sources_used?: SourceKey[];
   tavily_results: ResearchItem[];
   news_results: ResearchItem[];
@@ -151,105 +158,12 @@ const SOURCE_META: Record<
   },
 };
 
-const CATEGORIES: {
-  id: ResearchCategory;
-  label: string;
-  blurb: string;
-  sources: SourceKey[];
-  examples: string[];
-}[] = [
-  {
-    id: "general",
-    label: "General",
-    blurb: "Web, news, and papers",
-    sources: ["tavily", "news", "papers"],
-    examples: [
-      "AI agents for founders",
-      "LinkedIn thought leadership 2026",
-      "Climate tech funding news",
-    ],
-  },
-  {
-    id: "ai_engineer",
-    label: "AI Engineer",
-    blurb: "Web, papers, and GitHub repos",
-    sources: ["tavily", "papers", "github"],
-    examples: [
-      "LangGraph multi-agent orchestration",
-      "RAG evaluation benchmarks",
-      "vLLM inference optimization",
-    ],
-  },
-  {
-    id: "founder",
-    label: "Founder",
-    blurb: "Web, news, and papers",
-    sources: ["tavily", "news", "papers"],
-    examples: [
-      "B2B SaaS pricing 2026",
-      "PLG onboarding patterns",
-      "AI startup fundraising news",
-    ],
-  },
-  {
-    id: "academic",
-    label: "Academic",
-    blurb: "Papers first, then web",
-    sources: ["papers", "tavily"],
-    examples: [
-      "Transformer attention mechanisms",
-      "Diffusion model sampling",
-      "Causal inference in ML",
-    ],
-  },
-  {
-    id: "news_desk",
-    label: "News desk",
-    blurb: "News and web only",
-    sources: ["news", "tavily"],
-    examples: [
-      "OpenAI product launches",
-      "EU AI Act enforcement",
-      "Chip export controls 2026",
-    ],
-  },
-];
-
-const CAPABILITIES = [
-  {
-    title: "Research topics",
-    body: "Pull live context from the open web before you draft a word.",
-  },
-  {
-    title: "Read the news",
-    body: "Surface what’s trending today so the report stays timely.",
-  },
-  {
-    title: "Scan articles & papers",
-    body: "Ground ideas in journalism and academic sources, not guesses.",
-  },
-  {
-    title: "Get a full report",
-    body: "Executive summary, ranked findings, gaps, and a source list.",
-  },
-] as const;
-
 const LOAD_STAGES = [
   { label: "Scanning the web", tool: "Tavily" },
   { label: "Collecting headlines", tool: "Google News" },
   { label: "Reading papers", tool: "OpenAlex / S2" },
   { label: "Searching GitHub", tool: "Repos" },
   { label: "Organising findings", tool: "LangGraph" },
-];
-
-const SOURCE_TAB_ORDER: TabKey[] = [
-  "overview",
-  "gaps",
-  "disagreements",
-  "tavily",
-  "news",
-  "papers",
-  "github",
 ];
 
 function hostnameOf(url: string): string {
@@ -967,24 +881,74 @@ function ResearchLoader({ topic, stageIndex }: { topic: string; stageIndex: numb
   );
 }
 
+function msgId() {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
 export default function Home() {
-  const [view, setView] = useState<View>("hero");
+  const [view, setView] = useState<View>("home");
   const [topic, setTopic] = useState("");
-  const [limit, setLimit] = useState(6);
-  const [category, setCategory] = useState<ResearchCategory>("general");
-  const [researchMode, setResearchMode] = useState<ResearchModeId>("explore");
+  const [runMode, setRunMode] = useState<ResearchRunMode>("research");
+  const [pendingRouting, setPendingRouting] = useState<ResearchRoutingPlan | null>(null);
   const [loadStage, setLoadStage] = useState(0);
+  const [sessionLoading, setSessionLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<MultiSourceResearchResult | null>(null);
-  const [tab, setTab] = useState<TabKey>("overview");
+  const [sourceTab, setSourceTab] = useState<DisplayTab | null>(null);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [chatInput, setChatInput] = useState("");
+  const [chatBusy, setChatBusy] = useState(false);
+  const [expanding, setExpanding] = useState(false);
   const [useLlm, setUseLlm] = useState(false);
   const [reportBusy, setReportBusy] = useState(false);
   const [downloadBusy, setDownloadBusy] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
-  const [layout, setLayout] = useState<LayoutMode>("cards");
   const [cursorOn, setCursorOn] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const [sessions, setSessions] = useState<StoredChatSession[]>([]);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const cursorRef = useRef<HTMLDivElement | null>(null);
+  const sessionCreatedAtRef = useRef<number>(Date.now());
+
+  useEffect(() => {
+    setSessions(loadChatSessions());
+  }, []);
+
+  const refreshSessions = () => setSessions(loadChatSessions());
+
+  const saveActiveSession = (
+    override?: Partial<{
+      messages: ChatMessage[];
+      result: MultiSourceResearchResult | null;
+      topic: string;
+      runMode: ResearchRunMode;
+      sourceTab: DisplayTab | null;
+    }>,
+  ) => {
+    if (!activeSessionId) return;
+    const m = override?.messages ?? messages;
+    if (m.length === 0) return;
+    const t = override?.topic ?? topic;
+    const r = override?.result ?? result;
+    const rm = override?.runMode ?? runMode;
+    const tab = override?.sourceTab ?? sourceTab;
+    upsertChatSession({
+      id: activeSessionId,
+      title: sessionTitle(m, t),
+      topic: t,
+      runMode: rm,
+      messages: m,
+      result: r,
+      sourceTab: tab,
+      createdAt: sessionCreatedAtRef.current,
+      updatedAt: Date.now(),
+    });
+    refreshSessions();
+  };
+
+  useEffect(() => {
+    saveActiveSession();
+  }, [messages, result, topic, runMode, sourceTab, activeSessionId]);
 
   useEffect(() => {
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -1005,6 +969,8 @@ export default function Home() {
       const ny = my / h - 0.5;
       root.style.setProperty("--tilt-x", `${(-ny * 3.5).toFixed(2)}deg`);
       root.style.setProperty("--tilt-y", `${(nx * 4.5).toFixed(2)}deg`);
+      root.style.setProperty("--mouse-x", (mx / w).toFixed(4));
+      root.style.setProperty("--mouse-y", (my / h).toFixed(4));
       const cur = cursorRef.current;
       if (cur) {
         cur.style.transform = `translate3d(${mx}px, ${my}px, 0)`;
@@ -1061,78 +1027,79 @@ export default function Home() {
   }, [view]);
 
   useEffect(() => {
-    if (view === "studio") {
-      const t = window.setTimeout(() => inputRef.current?.focus(), 120);
-      return () => clearTimeout(t);
-    }
-  }, [view]);
-
-  useEffect(() => {
-    if (view !== "loading") return;
+    if (!sessionLoading) return;
     setLoadStage(0);
     const timers = [
-      window.setTimeout(() => setLoadStage(1), 700),
-      window.setTimeout(() => setLoadStage(2), 1400),
-      window.setTimeout(() => setLoadStage(3), 2100),
-      window.setTimeout(() => setLoadStage(4), 3000),
+      window.setTimeout(() => setLoadStage(1), 600),
+      window.setTimeout(() => setLoadStage(2), 1200),
+      window.setTimeout(() => setLoadStage(3), 1900),
+      window.setTimeout(() => setLoadStage(4), 2600),
+      window.setTimeout(() => setLoadStage(5), 3400),
     ];
     return () => timers.forEach(clearTimeout);
-  }, [view]);
-
-  const resultTabOrder = useMemo(() => {
-    const used = new Set(
-      (result?.sources_used?.length
-        ? result.sources_used
-        : (["tavily", "news", "papers"] as SourceKey[])
-      ).filter(Boolean),
-    );
-    if ((result?.github_results?.length ?? 0) > 0) used.add("github");
-    if (result && result.tavily_results.length > 0) used.add("tavily");
-    if (result && result.news_results.length > 0) used.add("news");
-    if (result && result.papers_results.length > 0) used.add("papers");
-    return SOURCE_TAB_ORDER.filter(
-      (k) =>
-        k === "overview" ||
-        k === "gaps" ||
-        k === "disagreements" ||
-        used.has(k as SourceKey),
-    );
-  }, [result]);
+  }, [sessionLoading]);
 
   useEffect(() => {
-    if (view !== "results" || !result) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (tab === "report") return;
-      if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
-      const order = resultTabOrder;
-      const i = order.indexOf(tab);
-      if (i < 0) return;
-      e.preventDefault();
-      const next =
-        e.key === "ArrowRight"
-          ? order[(i + 1) % order.length]
-          : order[(i - 1 + order.length) % order.length];
-      setTab(next);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [view, result, tab, resultTabOrder]);
+    const params = new URLSearchParams(window.location.search);
+    const q = params.get("q")?.trim();
+    if (q && view === "home" && !topic) {
+      setTopic(q);
+    }
+  }, [view, topic]);
+
+  const stripUrls = (text: string) =>
+    text.replace(/https?:\/\/\S+/g, "").replace(/\n{3,}/g, "\n\n").trim();
+
+  const fetchOpeningSummary = async (data: MultiSourceResearchResult) => {
+    if (data.tavily_answer?.trim()) return stripUrls(data.tavily_answer.trim()).slice(0, 900);
+    try {
+      const res = await fetch(`${API_BASE}/api/research/summary`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (res.ok) {
+        const payload = (await res.json()) as { summary?: string };
+        if (payload.summary?.trim()) return payload.summary.trim();
+      }
+    } catch {
+      /* use fallback below */
+    }
+    return "Research complete — browse the sources below or ask a follow-up.";
+  };
 
   const runResearch = async (forceRefresh = false) => {
     if (!topic.trim()) return;
-    setView("loading");
+    const q = topic.trim();
+    const sessionId = msgId();
+    sessionCreatedAtRef.current = Date.now();
+    setActiveSessionId(sessionId);
+    setView("session");
+    setSessionLoading(true);
     setError(null);
     setResult(null);
-    setTab("overview");
     setExportError(null);
+    setPendingRouting(null);
+    setMessages([{ id: msgId(), role: "user", content: q }]);
+    setChatInput("");
+    setSourceTab(null);
     try {
+      const routeRes = await fetch(`${API_BASE}/api/research/route`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ topic: q, run_mode: runMode }),
+      });
+      if (routeRes.ok) {
+        setPendingRouting((await routeRes.json()) as ResearchRoutingPlan);
+      }
+
       const res = await fetch(`${API_BASE}/api/research/multi`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          topic: topic.trim(),
-          limit,
-          category,
+          topic: q,
+          run_mode: runMode,
+          auto_route: true,
           force_refresh: forceRefresh,
         }),
       });
@@ -1147,19 +1114,203 @@ export default function Home() {
               : `Request failed (${res.status})`,
         );
       }
-      setResult(data as MultiSourceResearchResult);
-      setView("results");
+      const next = data as MultiSourceResearchResult;
+      setResult(next);
+      if (next.routing) setPendingRouting(next.routing);
+      const summary = await fetchOpeningSummary(next);
+      setMessages((prev) => [...prev, { id: msgId(), role: "assistant", content: summary }]);
+      const tabs = sourceTabsForResult(next);
+      const prefer =
+        tabs.find((t) => t === "youtube") ??
+        tabs.find((t) => t === "github") ??
+        tabs[0];
+      setSourceTab(prefer ?? null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unknown error");
-      setView("studio");
+      setView("home");
+      setMessages([]);
+    } finally {
+      setSessionLoading(false);
     }
+  };
+
+  const sendFollowUp = async (overrideQuestion?: string) => {
+    const question = (overrideQuestion ?? chatInput).trim();
+    if (!question || !result || chatBusy || sessionLoading || expanding) return;
+
+    const last = messages[messages.length - 1];
+    if (
+      last?.role === "user" &&
+      last.content === question &&
+      messages.some((m) => m.loading)
+    ) {
+      return;
+    }
+
+    if (!overrideQuestion) setChatInput("");
+    const assistId = msgId();
+    const userId = msgId();
+    const prior = [...messages, { id: userId, role: "user" as const, content: question }];
+    setMessages([
+      ...prior,
+      { id: assistId, role: "assistant", content: "", loading: true },
+    ]);
+    setChatBusy(true);
+    try {
+      const autoExpand = getExpandPermission() === "always";
+      const res = await fetch(`${API_BASE}/api/research/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          question,
+          messages: prior.map(({ role, content }) => ({ role, content })),
+          research: result,
+          auto_expand: autoExpand,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        const detail = data.detail;
+        throw new Error(typeof detail === "string" ? detail : `Chat failed (${res.status})`);
+      }
+      const payload = data as {
+        answer?: string;
+        action?: string;
+        proposal?: ResearchProposal;
+        research?: MultiSourceResearchResult;
+      };
+      if (payload.research) {
+        setResult(payload.research);
+        const tabs = sourceTabsForResult(payload.research);
+        const prefer =
+          tabs.find((t) => t === "youtube") ??
+          tabs.find((t) => t === "github") ??
+          tabs[0];
+        if (prefer) setSourceTab(prefer);
+      }
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === assistId
+            ? {
+                ...m,
+                content: payload.answer ?? "No answer returned.",
+                loading: false,
+                proposal:
+                  payload.action === "propose_research" ? payload.proposal : undefined,
+                proposalStatus:
+                  payload.action === "propose_research" ? "pending" : undefined,
+              }
+            : m,
+        ),
+      );
+    } catch (e) {
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === assistId
+            ? {
+                ...m,
+                loading: false,
+                content: e instanceof Error ? e.message : "Chat failed",
+              }
+            : m,
+        ),
+      );
+    } finally {
+      setChatBusy(false);
+    }
+  };
+
+  const runExpand = async (messageId: string, mode: "once" | "always") => {
+    if (!result || expanding) return;
+    const msg = messages.find((m) => m.id === messageId);
+    if (!msg?.proposal) return;
+    if (mode === "always") setExpandPermission("always");
+
+    const question =
+      [...messages].reverse().find((m) => m.role === "user")?.content ?? msg.proposal.query;
+
+    setExpanding(true);
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.id === messageId
+          ? { ...m, proposalStatus: "accepted" as const, loading: true }
+          : m,
+      ),
+    );
+    try {
+      const res = await fetch(`${API_BASE}/api/research/expand`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          question,
+          query: msg.proposal.query,
+          sources: msg.proposal.sources,
+          research: result,
+          messages: messages
+            .filter((m) => !m.loading && m.content)
+            .map(({ role, content }) => ({ role, content })),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        const detail = data.detail;
+        throw new Error(typeof detail === "string" ? detail : `Expand failed (${res.status})`);
+      }
+      const payload = data as {
+        answer?: string;
+        research?: MultiSourceResearchResult;
+      };
+      if (payload.research) {
+        setResult(payload.research);
+        const tabs = sourceTabsForResult(payload.research);
+        const prefer =
+          tabs.find((t) => t === "youtube") ??
+          tabs.find((t) => t === "github") ??
+          tabs[0];
+        if (prefer) setSourceTab(prefer);
+      }
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === messageId
+            ? {
+                ...m,
+                loading: false,
+                proposal: undefined,
+                content: payload.answer ?? "Search complete.",
+              }
+            : m,
+        ),
+      );
+    } catch (e) {
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === messageId
+            ? {
+                ...m,
+                loading: false,
+                proposalStatus: "pending" as const,
+                content: e instanceof Error ? e.message : "Expand failed",
+              }
+            : m,
+        ),
+      );
+    } finally {
+      setExpanding(false);
+    }
+  };
+
+  const dismissProposal = (messageId: string) => {
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.id === messageId ? { ...m, proposalStatus: "dismissed" as const } : m,
+      ),
+    );
   };
 
   const generateReport = async (forceRefresh = false) => {
     if (!result) return;
     setReportBusy(true);
     setExportError(null);
-    setTab("report");
     try {
       const res = await fetch(`${API_BASE}/api/research/synthesize`, {
         method: "POST",
@@ -1219,56 +1370,62 @@ export default function Home() {
     }
   };
 
-  const totals = useMemo(() => {
-    if (!result) return null;
-    const github = result.github_results?.length ?? 0;
-    return {
-      web: result.tavily_results.length,
-      news: result.news_results.length,
-      papers: result.papers_results.length,
-      github,
-      all:
-        result.tavily_results.length +
-        result.news_results.length +
-        result.papers_results.length +
-        github,
-    };
-  }, [result]);
+  const routing = result?.routing ?? pendingRouting;
 
-  const activeCategory = useMemo(
-    () => CATEGORIES.find((c) => c.id === category) ?? CATEGORIES[0],
-    [category],
-  );
-
-  const activeMode = RESEARCH_MODES.find((m) => m.id === researchMode) ?? RESEARCH_MODES[0]!;
-  const estSources = estimateSourceCount(limit, activeCategory.sources.length);
-
-  const handleModeChange = (modeId: ResearchModeId) => {
-    setResearchMode(modeId);
-    setCategory((prev) => modeCategory(modeId, prev));
+  const resetHome = () => {
+    saveActiveSession();
+    setView("home");
+    setError(null);
+    setMessages([]);
+    setResult(null);
+    setSessionLoading(false);
+    setActiveSessionId(null);
+    setTopic("");
+    setChatInput("");
+    setSourceTab(null);
   };
 
-  const activeItems: ResearchItem[] = useMemo(() => {
-    if (!result) return [];
-    if (tab === "tavily") return result.tavily_results;
-    if (tab === "news") return result.news_results;
-    if (tab === "papers") return result.papers_results;
-    if (tab === "github") return result.github_results || [];
-    return [];
-  }, [result, tab]);
+  const startNewChat = () => {
+    saveActiveSession();
+    resetHome();
+  };
 
-  const overviewItems: ResearchItem[] = useMemo(() => {
-    if (!result) return [];
-    return [
-      ...result.tavily_results,
-      ...result.news_results,
-      ...result.papers_results,
-      ...(result.github_results || []),
-    ];
-  }, [result]);
+  const loadSession = (id: string) => {
+    if (id === activeSessionId) return;
+    saveActiveSession();
+    const s = getChatSession(id);
+    if (!s) return;
+    sessionCreatedAtRef.current = s.createdAt;
+    setActiveSessionId(s.id);
+    setTopic(s.topic);
+    setRunMode(s.runMode);
+    setMessages(s.messages);
+    setResult(s.result as MultiSourceResearchResult | null);
+    setSourceTab(s.sourceTab);
+    setChatInput("");
+    setError(null);
+    setSessionLoading(false);
+    setView(s.messages.length > 0 ? "session" : "home");
+  };
+
+  const handleDeleteSession = (id: string) => {
+    deleteChatSession(id);
+    refreshSessions();
+    if (activeSessionId === id) {
+      setActiveSessionId(null);
+      setView("home");
+      setMessages([]);
+      setResult(null);
+      setTopic("");
+    }
+  };
 
   return (
     <div style={{ minHeight: "100vh", position: "relative" }}>
+      <div className="tech-bg" aria-hidden>
+        <div className="tech-bg-grid" />
+        <div className="tech-bg-glow" />
+      </div>
       <div className="bg-grain" aria-hidden />
       <div
         ref={cursorRef}
@@ -1278,399 +1435,40 @@ export default function Home() {
         <span className="app-cursor-ring" />
         <span className="app-cursor-dot" />
       </div>
-      {/* Persistent navbar */}
+      <div className="app-shell">
+        <ChatSidebar
+          sessions={sessions}
+          activeId={activeSessionId}
+          open={sidebarOpen}
+          onNewChat={startNewChat}
+          onSelect={loadSession}
+          onDelete={handleDeleteSession}
+          onToggle={() => setSidebarOpen((o) => !o)}
+        />
+
+        <div className="app-main">
       <header className="site-header">
         <div className="site-header-inner">
           <button
             type="button"
             className="site-brand"
-            onClick={() => {
-              setView("hero");
-              setError(null);
-            }}
+            onClick={startNewChat}
           >
+            <AtelierMark size={16} className="site-brand-glyph" />
             Atelier
           </button>
 
           <nav className="site-nav" aria-label="Primary">
-            <button
-              type="button"
-              className={`site-nav-link${view === "hero" ? " is-active" : ""}`}
-              onClick={() => {
-                setView("hero");
-                setError(null);
-              }}
-            >
-              Home
-            </button>
-            <button
-              type="button"
-              className="site-nav-link"
-              onClick={() => {
-                setView("hero");
-                window.setTimeout(() => {
-                  document.getElementById("how-it-works")?.scrollIntoView({
-                    behavior: "smooth",
-                  });
-                }, 40);
-              }}
-            >
-              How it works
-            </button>
-            <button
-              type="button"
-              className="site-nav-link"
-              onClick={() => {
-                setView("hero");
-                window.setTimeout(() => {
-                  document.getElementById("capabilities")?.scrollIntoView({
-                    behavior: "smooth",
-                  });
-                }, 40);
-              }}
-            >
-              Sources
-            </button>
-            <button
-              type="button"
-              className="site-nav-link"
-              onClick={() => {
-                setView("hero");
-                window.setTimeout(() => {
-                  document.getElementById("report")?.scrollIntoView({
-                    behavior: "smooth",
-                  });
-                }, 40);
-              }}
-            >
-              Report
-            </button>
-            <button
-              type="button"
-              className={`site-nav-link${view === "studio" ? " is-active" : ""}`}
-              onClick={() => setView("studio")}
-            >
-              Studio
-            </button>
-            {view === "results" && (
-              <button
-                type="button"
-                className="site-nav-link is-active"
-                onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
-              >
-                Results
-              </button>
+            {view === "session" && result && (
+              <span className="site-nav-topic">{result.topic}</span>
             )}
           </nav>
 
           <div className="site-header-actions">
-            {view !== "hero" && view !== "loading" && view !== "studio" && (
+            {view === "session" && result && (
               <button
                 type="button"
                 className="btn-3d-ghost site-header-btn"
-                onClick={() => setView("studio")}
-              >
-                New topic
-              </button>
-            )}
-            <button
-              type="button"
-              className="btn-3d site-header-btn"
-              onClick={() => setView("studio")}
-            >
-              Research
-            </button>
-          </div>
-        </div>
-      </header>
-
-      {view === "hero" && <HeroHome onResearch={() => setView("studio")} />}
-
-      {/* STUDIO — open research sheet */}
-      {view === "studio" && (
-        <main className="sheet-up studio-shell">
-          <p
-            style={{
-              margin: 0,
-              fontSize: "0.7rem",
-              letterSpacing: "0.18em",
-              textTransform: "uppercase",
-              color: "var(--muted)",
-            }}
-          >
-            Research studio
-          </p>
-          <h1
-            style={{
-              margin: "0.75rem 0 0",
-              fontFamily: "var(--font-display)",
-              fontSize: "clamp(2.2rem, 5vw, 3.2rem)",
-              fontWeight: 500,
-              letterSpacing: "-0.03em",
-              lineHeight: 1.05,
-            }}
-          >
-            What should we look into?
-          </h1>
-          <p style={{ margin: "1rem 0 0", color: "var(--ink-soft)", lineHeight: 1.6, maxWidth: "36rem" }}>
-            Pick a research mode and source preset. Atelier gathers in parallel, caches for 24h,
-            and compiles a report without an LLM — enhance uses exactly one Gemini call.
-          </p>
-
-          <div style={{ marginTop: "2rem" }}>
-            <p className="studio-section-label">Research mode</p>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
-              {RESEARCH_MODES.map((m) => (
-                <button
-                  key={m.id}
-                  type="button"
-                  className={`chip${researchMode === m.id ? " is-active" : ""}`}
-                  onClick={() => handleModeChange(m.id)}
-                  title={m.planned ? m.plannedNote : m.blurb}
-                >
-                  {m.label}
-                  {m.planned ? " · planned" : ""}
-                </button>
-              ))}
-            </div>
-            <p style={{ margin: "0.75rem 0 0", fontSize: "0.85rem", color: "var(--ink-soft)" }}>
-              {activeMode.blurb}
-            </p>
-          </div>
-
-          {(researchMode === "explore" || researchMode === "compare") && (
-          <div style={{ marginTop: "1.75rem" }}>
-            <p className="studio-section-label">Source preset</p>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
-              {CATEGORIES.map((c) => (
-                <button
-                  key={c.id}
-                  type="button"
-                  className={`chip${category === c.id ? " is-active" : ""}`}
-                  onClick={() => setCategory(c.id)}
-                  title={c.blurb}
-                >
-                  {c.label}
-                </button>
-              ))}
-            </div>
-            <p style={{ margin: "0.75rem 0 0", fontSize: "0.85rem", color: "var(--ink-soft)" }}>
-              {activeCategory.blurb} — routes which families run (see README source router).
-            </p>
-          </div>
-          )}
-
-          <label
-            htmlFor="topic"
-            style={{
-              display: "block",
-              marginTop: "2rem",
-              fontSize: "0.68rem",
-              letterSpacing: "0.16em",
-              textTransform: "uppercase",
-              color: "var(--muted)",
-            }}
-          >
-            Topic
-          </label>
-          <input
-            ref={inputRef}
-            id="topic"
-            value={topic}
-            onChange={(e) => setTopic(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && void runResearch()}
-            placeholder="AI for founders automate tasks"
-            style={{
-              width: "100%",
-              marginTop: "0.65rem",
-              border: "none",
-              borderBottom: "1px solid var(--ink)",
-              background: "transparent",
-              padding: "0.85rem 0",
-              fontFamily: "var(--font-display)",
-              fontSize: "clamp(1.35rem, 3vw, 1.85rem)",
-              fontWeight: 500,
-              outline: "none",
-              color: "var(--ink)",
-            }}
-          />
-
-          <div style={{ marginTop: "1.35rem" }}>
-            <p
-              style={{
-                margin: "0 0 0.65rem",
-                fontSize: "0.66rem",
-                letterSpacing: "0.14em",
-                textTransform: "uppercase",
-                color: "var(--muted)",
-              }}
-            >
-              Try an example
-            </p>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
-              {activeCategory.examples.map((ex) => (
-                <button
-                  key={ex}
-                  type="button"
-                  className="chip"
-                  onClick={() => {
-                    setTopic(ex);
-                    inputRef.current?.focus();
-                  }}
-                >
-                  {ex}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              gap: "1rem",
-              marginTop: "2rem",
-              flexWrap: "wrap",
-            }}
-          >
-            <label style={{ fontSize: "0.82rem", color: "var(--muted)", display: "block" }}>
-              <span className="studio-section-label" style={{ display: "block", marginBottom: "0.5rem" }}>
-                Depth
-              </span>
-              <span style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
-                {DEPTH_PRESETS.map((d) => (
-                  <button
-                    key={d.id}
-                    type="button"
-                    className={`chip${limit === d.id ? " is-active" : ""}`}
-                    onClick={() => setLimit(d.id)}
-                  >
-                    {d.label} ({d.sub})
-                  </button>
-                ))}
-              </span>
-            </label>
-            <p className="studio-budget">
-              ≈ {estSources} sources max · compile 0 AI calls · enhance +1 Gemini call
-            </p>
-            <div style={{ display: "flex", gap: "0.75rem" }}>
-              <button type="button" className="btn-3d-ghost" onClick={() => setView("hero")}>
-                Back
-              </button>
-              <button
-                type="button"
-                className="btn-3d"
-                disabled={!topic.trim()}
-                onClick={() => runResearch()}
-              >
-                Start research
-              </button>
-            </div>
-          </div>
-
-          {error && (
-            <p
-              style={{
-                marginTop: "1.5rem",
-                color: "var(--warn)",
-                borderLeft: "2px solid var(--warn)",
-                paddingLeft: "0.85rem",
-              }}
-            >
-              {error}
-            </p>
-          )}
-
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: `repeat(${Math.min(activeCategory.sources.length, 4)}, 1fr)`,
-              gap: "0.75rem",
-              marginTop: "3rem",
-              borderTop: "1px solid var(--line)",
-              paddingTop: "1.5rem",
-            }}
-          >
-            {activeCategory.sources.map((key) => (
-              <div key={key}>
-                <p style={{ margin: 0, fontFamily: "var(--font-display)", fontSize: "1.2rem" }}>
-                  {SOURCE_META[key].label}
-                </p>
-                <p style={{ margin: "0.3rem 0 0", fontSize: "0.72rem", color: "var(--muted)", letterSpacing: "0.06em" }}>
-                  {SOURCE_META[key].tool}
-                </p>
-              </div>
-            ))}
-          </div>
-        </main>
-      )}
-
-      {view === "loading" && (
-        <ResearchLoader topic={topic.trim()} stageIndex={loadStage} />
-      )}
-
-      {/* RESULTS */}
-      {view === "results" && result && totals && (
-        <main
-          className="sheet-up"
-          style={{
-            maxWidth: 920,
-            margin: "0 auto",
-            padding: "0.5rem clamp(1.25rem, 4vw, 2rem) 4.5rem",
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "end",
-              gap: "1rem",
-              marginBottom: "1.25rem",
-              flexWrap: "wrap",
-            }}
-          >
-            <div>
-              <p
-                style={{
-                  margin: 0,
-                  fontSize: "0.68rem",
-                  letterSpacing: "0.16em",
-                  textTransform: "uppercase",
-                  color: "var(--muted)",
-                }}
-              >
-                Research · {totals.all} sources
-                {result.cached ? " · cached" : ""}
-              </p>
-              <h2
-                style={{
-                  margin: "0.4rem 0 0",
-                  fontFamily: "var(--font-display)",
-                  fontSize: "clamp(1.7rem, 3.5vw, 2.3rem)",
-                  fontWeight: 500,
-                  letterSpacing: "-0.02em",
-                  maxWidth: "28rem",
-                  lineHeight: 1.15,
-                }}
-              >
-                {result.topic}
-              </h2>
-            </div>
-            <div style={{ display: "flex", gap: "0.55rem", flexWrap: "wrap" }}>
-              <button
-                type="button"
-                className="btn-3d-ghost"
-                style={{ padding: "0.7rem 1rem" }}
-                onClick={() => setView("studio")}
-              >
-                New research
-              </button>
-              <button
-                type="button"
-                className="btn-3d-ghost"
-                style={{ padding: "0.7rem 1rem" }}
-                title="Bypass cache and fetch fresh sources"
                 onClick={() => {
                   setTopic(result.topic);
                   void runResearch(true);
@@ -1678,503 +1476,50 @@ export default function Home() {
               >
                 Refresh
               </button>
-            </div>
+            )}
           </div>
+        </div>
+      </header>
 
-          <div className={`report-cta${tab === "report" ? " is-active" : ""}`}>
-            <div className="report-cta-copy">
-              <p className="report-cta-kicker">
-                {result.report ? "Report ready" : "Next step"}
-              </p>
-              <p className="report-cta-title">
-                {result.report
-                  ? "Open your research report"
-                  : "Get the full research report"}
-              </p>
-              <p className="report-cta-body">
-                {result.report
-                  ? "Summary, ranked findings, news, papers, gaps, and downloads — Markdown, JSON, or PDF."
-                  : "Turn these sources into a readable report with findings and export options."}
-              </p>
-            </div>
-            <button
-              type="button"
-              className="btn-3d report-cta-btn"
-              onClick={() => setTab("report")}
-            >
-              {tab === "report"
-                ? "Viewing report"
-                : result.report
-                  ? "Open report"
-                  : "Generate report"}
-            </button>
-          </div>
+      <GeminiThread
+        isHome={view === "home"}
+        topic={topic}
+        runMode={runMode}
+        messages={messages}
+        input={chatInput}
+        busy={chatBusy}
+        expanding={expanding}
+        loadingResearch={sessionLoading}
+        result={result}
+        routing={routing}
+        sourceTab={sourceTab}
+        loadStage={loadStage}
+        onTopicChange={setTopic}
+        onRunModeChange={setRunMode}
+        onInputChange={setChatInput}
+        onSubmit={() => void runResearch()}
+        onSend={() => void sendFollowUp()}
+        onAllowOnce={(id) => void runExpand(id, "once")}
+        onAllowAlways={(id) => void runExpand(id, "always")}
+        onDismissProposal={dismissProposal}
+        onSourceTabChange={setSourceTab}
+      />
 
-          {tab !== "report" && (
-          <nav className="cat-rail" aria-label="Categories">
-            {(
-              [
-                ["overview", "Overview", totals.all],
-                ["gaps", "Gaps", result.report?.open_questions?.length ?? 0],
-                ["disagreements", "Conflicts", 0],
-                ["tavily", "Web", totals.web],
-                ["news", "News", totals.news],
-                ["papers", "Papers", totals.papers],
-                ["github", "GitHub", totals.github],
-              ] as const
-            )
-              .filter(([key]) => resultTabOrder.includes(key))
-              .map(([key, label, count]) => {
-              const pct =
-                totals.all > 0 ? Math.max(8, Math.round((count / totals.all) * 100)) : 0;
-              return (
-                <button
-                  key={key}
-                  type="button"
-                  onClick={() => setTab(key)}
-                  className={`cat-btn${tab === key ? " is-active" : ""}`}
-                >
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: "0.5rem" }}>
-                    <span
-                      style={{
-                        fontSize: "0.72rem",
-                        letterSpacing: "0.1em",
-                        textTransform: "uppercase",
-                        fontWeight: 500,
-                      }}
-                    >
-                      {label}
-                    </span>
-                    <span className="count">{count}</span>
-                  </div>
-                  <div className="cat-meter" aria-hidden>
-                    <span style={{ width: `${pct}%` }} />
-                  </div>
-                </button>
-              );
-            })}
-          </nav>
-          )}
-          {tab !== "report" && (
-          <p
-            style={{
-              margin: "-0.75rem 0 1.25rem",
-              fontSize: "0.72rem",
-              color: "var(--muted)",
-            }}
-          >
-            Browse sources · ← → keys
-          </p>
-          )}
-
-          {tab === "report" && (
-            <div key="report" style={{ marginTop: "0.5rem" }}>
-              <div style={{ marginBottom: "1.25rem" }}>
-                <button
-                  type="button"
-                  className="btn-3d-ghost"
-                  style={{ padding: "0.55rem 0.9rem" }}
-                  onClick={() => setTab("overview")}
-                >
-                  ← Back to sources
-                </button>
-              </div>
-              {!result.report && !reportBusy && (
-                <div
-                  className="rise"
-                  style={{
-                    border: "1px solid var(--ink)",
-                    padding: "1.75rem 1.35rem",
-                    background: "var(--surface)",
-                    boxShadow: "0 4px 0 #2a2a2a",
-                    marginBottom: "1.5rem",
-                  }}
-                >
-                  <p
-                    style={{
-                      margin: 0,
-                      fontFamily: "var(--font-display)",
-                      fontSize: "1.6rem",
-                      fontWeight: 500,
-                    }}
-                  >
-                    Build your report
-                  </p>
-                  <p style={{ margin: "0.65rem 0 0", color: "var(--ink-soft)", lineHeight: 1.6, maxWidth: "36rem" }}>
-                    Compile a report from the sources you already gathered — summary,
-                    ranked findings, news, papers, gaps, and downloads. Optional AI rewrite
-                    uses Gemini.
-                  </p>
-                  <label
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: "0.55rem",
-                      marginTop: "1.25rem",
-                      fontSize: "0.85rem",
-                      color: "var(--ink-soft)",
-                      cursor: "pointer",
-                    }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={useLlm}
-                      onChange={(e) => setUseLlm(e.target.checked)}
-                    />
-                    Enhance with Gemini (1 call)
-                  </label>
-                  <div style={{ marginTop: "1.35rem", display: "flex", gap: "0.65rem", flexWrap: "wrap" }}>
-                    <button type="button" className="btn-3d" onClick={() => generateReport(false)}>
-                      Generate report
-                    </button>
-                    {result.report && (
-                      <button
-                        type="button"
-                        className="btn-3d-ghost"
-                        onClick={() => generateReport(true)}
-                      >
-                        Regenerate
-                      </button>
-                    )}
-                  </div>
-                  {exportError && (
-                    <p style={{ marginTop: "1rem", color: "var(--warn)" }}>{exportError}</p>
-                  )}
-                </div>
-              )}
-
-              {reportBusy && (
-                <div style={{ padding: "2.5rem 0", textAlign: "center" }}>
-                  <div className="loader-ring" style={{ margin: "0 auto 1rem" }} />
-                  <p style={{ fontFamily: "var(--font-display)", fontSize: "1.5rem", margin: 0 }}>
-                    {useLlm ? "Writing report with Gemini…" : "Compiling report…"}
-                  </p>
-                </div>
-              )}
-
-              {result.report && !reportBusy && (
-                <ResearchReportView
-                  report={result.report}
-                  reportError={result.report_error}
-                  onDownloadMd={() => handleDownload("md")}
-                  onDownloadJson={() => handleDownload("json")}
-                  onDownloadPdf={() => handleDownload("pdf")}
-                  downloading={downloadBusy}
-                />
-              )}
-              {exportError && result.report && (
-                <p style={{ marginTop: "1rem", color: "var(--warn)" }}>{exportError}</p>
-              )}
-            </div>
-          )}
-
-          {tab === "overview" && (
-            <div className="rise" key="overview">
-              {result.tavily_answer && (
-                <aside
-                  style={{
-                    marginBottom: "1.75rem",
-                    padding: "1.35rem 1.2rem",
-                    border: "1px solid var(--ink)",
-                    background: "var(--surface)",
-                    boxShadow: "0 4px 0 #2a2a2a",
-                  }}
-                >
-                  <p
-                    style={{
-                      margin: 0,
-                      fontSize: "0.66rem",
-                      letterSpacing: "0.16em",
-                      textTransform: "uppercase",
-                      color: "var(--muted)",
-                    }}
-                  >
-                    Synthesis · Tavily
-                  </p>
-                  <p
-                    style={{
-                      margin: "0.85rem 0 0",
-                      fontFamily: "var(--font-display)",
-                      fontSize: "clamp(1.15rem, 2.2vw, 1.4rem)",
-                      lineHeight: 1.45,
-                      fontWeight: 500,
-                    }}
-                  >
-                    {result.tavily_answer}
-                  </p>
-                </aside>
-              )}
-
-              <NewsTimeline items={result.news_results} />
-              <div className="viz-grid">
-                <SourceMixChart
-                  stats={{
-                    web: totals.web,
-                    news: totals.news,
-                    papers: totals.papers,
-                    github: totals.github,
-                    total: totals.all,
-                  }}
-                />
-                <ScoreBars items={result.tavily_results} />
-                <CitationBars items={result.papers_results} />
-                <CitationBars
-                  items={result.github_results || []}
-                  label="Stars (GitHub)"
-                />
-              </div>
-
-              <p style={{ margin: "1.5rem 0 1.15rem", color: "var(--ink-soft)", lineHeight: 1.6 }}>
-                Jump into a stack — cards use real previews from the pages (not AI images).
-              </p>
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                  gap: "0.9rem",
-                }}
-              >
-                {(
-                  [
-                    ["tavily", totals.web, result.tavily_results],
-                    ["news", totals.news, result.news_results],
-                    ["papers", totals.papers, result.papers_results],
-                    ["github", totals.github, result.github_results || []],
-                  ] as const
-                )
-                  .filter(([key]) => resultTabOrder.includes(key))
-                  .map(([key, count, items]) => {
-                  const m = SOURCE_META[key];
-                  const cover = items.find((it) => it.image_url)?.image_url;
-                  return (
-                    <button
-                      key={key}
-                      type="button"
-                      className="source-card source-card-visual"
-                      onClick={() => setTab(key)}
-                    >
-                      <div className="source-card-cover">
-                        {cover ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img src={cover} alt="" />
-                        ) : (
-                          <span>{m.label}</span>
-                        )}
-                      </div>
-                      <p
-                        style={{
-                          margin: "0.85rem 0 0",
-                          fontSize: "0.66rem",
-                          letterSpacing: "0.14em",
-                          textTransform: "uppercase",
-                          color: "var(--muted)",
-                        }}
-                      >
-                        {m.tool}
-                      </p>
-                      <p
-                        style={{
-                          margin: "0.35rem 0 0",
-                          fontFamily: "var(--font-display)",
-                          fontSize: "1.65rem",
-                          fontWeight: 500,
-                        }}
-                      >
-                        {m.label}
-                      </p>
-                      <p style={{ margin: "0.35rem 0 0", fontSize: "0.85rem", color: "var(--ink-soft)" }}>
-                        {count} finding{count === 1 ? "" : "s"}
-                      </p>
-                      <ul className="preview">
-                        {items.slice(0, 2).map((it, i) => (
-                          <li key={`${it.url}-p-${i}`}>{it.title}</li>
-                        ))}
-                        {items.length === 0 && <li>No items yet</li>}
-                      </ul>
-                    </button>
-                  );
-                })}
-              </div>
-
-              <header
-                style={{
-                  marginTop: "2.25rem",
-                  marginBottom: "1rem",
-                  display: "flex",
-                  justifyContent: "space-between",
-                  gap: "1rem",
-                  alignItems: "end",
-                  flexWrap: "wrap",
-                }}
-              >
-                <div>
-                  <p
-                    style={{
-                      margin: 0,
-                      fontSize: "0.66rem",
-                      letterSpacing: "0.16em",
-                      textTransform: "uppercase",
-                      color: "var(--muted)",
-                    }}
-                  >
-                    All sources · {overviewItems.length} findings
-                  </p>
-                  <h3
-                    style={{
-                      margin: "0.35rem 0 0",
-                      fontFamily: "var(--font-display)",
-                      fontSize: "2.1rem",
-                      fontWeight: 500,
-                    }}
-                  >
-                    Findings
-                  </h3>
-                </div>
-                <LayoutToggle layout={layout} onChange={setLayout} />
-              </header>
-              <div
-                className="rule-grow"
-                style={{ height: 1, background: "var(--ink)", margin: "0 0 1rem" }}
-              />
-              <div className={layout === "cards" ? "findings-grid" : "findings-list panel-scroll"}>
-                {overviewItems.length === 0 ? (
-                  <p style={{ color: "var(--muted)" }}>No findings yet.</p>
-                ) : (
-                  overviewItems.map((item, i) => (
-                    <Finding
-                      key={`overview-${item.url}-${i}`}
-                      item={item}
-                      index={i}
-                      layout={layout}
-                    />
-                  ))
-                )}
-              </div>
-            </div>
-          )}
-
-          {tab === "gaps" && (
-            <div className="rise" key="gaps">
-              <h3
-                style={{
-                  fontFamily: "var(--font-display)",
-                  fontSize: "1.75rem",
-                  fontWeight: 500,
-                  margin: "0 0 1rem",
-                }}
-              >
-                Research gaps
-              </h3>
-              {result.report?.open_questions?.length ? (
-                <ol style={{ margin: 0, paddingLeft: "1.25rem", lineHeight: 1.65, color: "var(--ink-soft)" }}>
-                  {result.report.open_questions.map((q) => (
-                    <li key={q} style={{ marginBottom: "0.75rem" }}>
-                      {q}
-                    </li>
-                  ))}
-                </ol>
-              ) : (
-                <div className="planned-panel">
-                  {result.report
-                    ? "No open questions were identified for this run."
-                    : "Generate a report to surface research gaps and open questions from the retrieved source set."}
-                </div>
-              )}
-            </div>
-          )}
-
-          {tab === "disagreements" && (
-            <div className="rise" key="disagreements">
-              <h3
-                style={{
-                  fontFamily: "var(--font-display)",
-                  fontSize: "1.75rem",
-                  fontWeight: 500,
-                  margin: "0 0 1rem",
-                }}
-              >
-                Disagreements
-              </h3>
-              <div className="planned-panel">
-                Consensus and disagreement detection needs the evidence layer (phase 2).
-                Until then, inspect conflicting claims manually across sources — especially
-                when news and papers reach different conclusions.
-              </div>
-            </div>
-          )}
-
-          {tab !== "overview" &&
-            tab !== "report" &&
-            tab !== "gaps" &&
-            tab !== "disagreements" && (
-            <div className="rise" key={tab}>
-              <header
-                style={{
-                  marginBottom: "1rem",
-                  display: "flex",
-                  justifyContent: "space-between",
-                  gap: "1rem",
-                  alignItems: "end",
-                  flexWrap: "wrap",
-                }}
-              >
-                <div>
-                  <p
-                    style={{
-                      margin: 0,
-                      fontSize: "0.66rem",
-                      letterSpacing: "0.16em",
-                      textTransform: "uppercase",
-                      color: "var(--muted)",
-                    }}
-                  >
-                    Scraped with {SOURCE_META[tab].tool}
-                  </p>
-                  <h3
-                    style={{
-                      margin: "0.35rem 0 0",
-                      fontFamily: "var(--font-display)",
-                      fontSize: "2.1rem",
-                      fontWeight: 500,
-                    }}
-                  >
-                    {SOURCE_META[tab].label}
-                  </h3>
-                </div>
-                <div style={{ display: "flex", gap: "0.45rem", alignItems: "center" }}>
-                  <LayoutToggle layout={layout} onChange={setLayout} />
-                </div>
-              </header>
-              <div
-                className="rule-grow"
-                style={{ height: 1, background: "var(--ink)", margin: "0 0 0.85rem" }}
-              />
-              <p style={{ margin: "0 0 1rem", fontSize: "0.9rem", color: "var(--ink-soft)", lineHeight: 1.55 }}>
-                {SOURCE_META[tab].method}
-              </p>
-              {result.errors?.[tab] && (
-                <p style={{ margin: "0 0 0.7rem", color: "var(--warn)", fontSize: "0.88rem" }}>
-                  {result.errors[tab]}
-                </p>
-              )}
-              <div className={layout === "cards" ? "findings-grid" : "findings-list panel-scroll"}>
-                {activeItems.length === 0 ? (
-                  <p style={{ color: "var(--muted)" }}>No findings in this category.</p>
-                ) : (
-                  activeItems.map((item, i) => (
-                    <Finding
-                      key={`${item.url}-${i}`}
-                      item={item}
-                      index={i}
-                      layout={layout}
-                    />
-                  ))
-                )}
-              </div>
-            </div>
-          )}
-        </main>
+      {error && (
+        <p
+          style={{
+            maxWidth: "var(--content-max)",
+            margin: "1rem auto",
+            padding: "0 1rem",
+            color: "var(--warn)",
+            fontSize: "0.9rem",
+          }}
+        >
+          {error}
+        </p>
       )}
+        </div>
+      </div>
     </div>
   );
 }

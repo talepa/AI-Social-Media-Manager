@@ -452,6 +452,35 @@ button {
   color: inherit;
 }
 
+.finding-card-link {
+  text-decoration: none;
+  transition: background 0.15s ease;
+}
+
+.finding-card-link:hover {
+  background: rgba(0, 212, 170, 0.06);
+}
+
+.finding-card-link:hover .finding-open-hint {
+  color: var(--accent, #00d4aa);
+}
+
+.finding-card:hover {
+  border-color: rgba(0, 212, 170, 0.35);
+}
+
+.finding-open-hint {
+  color: var(--muted);
+  transition: color 0.15s ease;
+}
+
+.finding-submeta--inline {
+  margin: 0.35rem 0 0;
+  font-size: 0.72rem;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
 .finding-thumb {
   width: 112px;
   height: 84px;

@@ -10,6 +10,42 @@ from typing import Dict, List, Literal, Optional
 from pydantic import BaseModel, Field
 
 SourceType = Literal["tavily", "news", "papers", "github"]
+ResearchRunMode = Literal["quick", "research", "deep", "plan"]
+ResearchIntent = Literal[
+    "explore",
+    "compare",
+    "evaluate",
+    "news",
+    "academic",
+    "technical",
+]
+ResearchDomain = Literal[
+    "general",
+    "health",
+    "software",
+    "business",
+    "science",
+    "current_events",
+]
+RoutingMethod = Literal["rules", "llm", "fallback"]
+
+
+class ResearchRoutingPlan(BaseModel):
+    topic: str
+    search_query: str = Field(description="Query sent to web/news APIs")
+    papers_search_query: Optional[str] = Field(
+        default=None,
+        description="Focused query for academic libraries when papers run",
+    )
+    domain: ResearchDomain = "general"
+    intent: ResearchIntent = "explore"
+    run_mode: ResearchRunMode = "research"
+    sources: List[SourceType] = Field(default_factory=list)
+    limit: int = Field(ge=1, le=20, default=6)
+    confidence: float = Field(ge=0, le=1, default=0.5)
+    reason: str = ""
+    method: RoutingMethod = "rules"
+    category: str = "general"
 
 
 class WebResult(BaseModel):
@@ -131,7 +167,11 @@ class MultiSourceResearchResult(BaseModel):
     topic: str
     category: Optional[str] = Field(
         default=None,
-        description="Research category preset used for this run",
+        description="Legacy category preset (from auto-router)",
+    )
+    routing: Optional["ResearchRoutingPlan"] = Field(
+        default=None,
+        description="Auto-routing plan when enabled",
     )
     sources_used: List[SourceType] = Field(
         default_factory=list,

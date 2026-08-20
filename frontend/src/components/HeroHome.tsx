@@ -3,7 +3,7 @@
 import {
   PIPELINE_STEPS,
   PRINCIPLES,
-  RESEARCH_MODES,
+  RUN_MODES,
 } from "../lib/productConfig";
 
 const QUERIES = [
@@ -288,20 +288,16 @@ export default function HeroHome({ onResearch }: { onResearch: () => void }) {
         <div className="hero-inner section-band-inner">
           <div className="hero-section-head">
             <p className="hero-kicker">Research modes</p>
-            <h2 className="hero-section-title">Five modes. Fixed budgets.</h2>
+            <h2 className="hero-section-title">Pick depth. We route sources.</h2>
             <p className="hero-section-lead">
-              Structured workflows — not an open-ended agent loop. Compare and Evaluate
-              shape the report template today; full routing lands in phase 2.
+              Quick, Research, Deep, or Plan — Atelier infers domain and picks evidence APIs for you.
             </p>
           </div>
           <div className="mode-grid">
-            {RESEARCH_MODES.map((mode) => (
+            {RUN_MODES.map((mode) => (
               <article key={mode.id} className="mode-card">
-                <p className="mode-card-label">{mode.label}</p>
-                <p className="mode-card-body">{mode.blurb}</p>
-                {mode.planned ? (
-                  <span className="mode-badge">{mode.plannedNote}</span>
-                ) : null}
+                <p className="mode-card-label">{mode.icon} {mode.label}</p>
+                <p className="mode-card-body">{mode.hint}</p>
               </article>
             ))}
           </div>

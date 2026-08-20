@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Bodoni_Moda, Instrument_Sans } from "next/font/google";
 import "./globals.css";
+import "./dark-research.css";
 
 const bodoni = Bodoni_Moda({
   variable: "--font-bodoni",

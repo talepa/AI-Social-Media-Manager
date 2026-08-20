@@ -18,6 +18,7 @@ from app.schemas.research import (
     MultiSourceResearchResult,
     ResearchItem,
     ResearchReport,
+    ResearchRoutingPlan,
     WebResult,
 )
 from app.services.github_client import search_github_repos
@@ -28,6 +29,9 @@ from app.services.preview_client import (
     collect_media_urls,
     enrich_items_with_previews,
 )
+from app.services.result_classifier import reclassify_results
+from app.services.query_utils import build_web_search_query, wants_youtube
+from app.services.web_utils import filter_tavily_results
 from app.services.report_synthesizer import synthesize_report
 from app.services.research_categories import resolve_sources
 from app.services.tavily_client import search_web
@@ -39,6 +43,8 @@ def _merge_dicts(left: Dict[str, str], right: Dict[str, str]) -> Dict[str, str]:
 
 class MultiSourceState(TypedDict):
     topic: str
+    search_query: NotRequired[Optional[str]]
+    papers_search_query: NotRequired[Optional[str]]
     limit: NotRequired[int]
     with_report: NotRequired[bool]
     category: NotRequired[Optional[str]]
@@ -60,13 +66,26 @@ def _enabled(state: MultiSourceState, source: str) -> bool:
     return source in sources
 
 
+def _query(state: MultiSourceState) -> str:
+    return (state.get("search_query") or state.get("topic") or "").strip()
+
+
 def tavily_node(state: MultiSourceState) -> dict:
     if not _enabled(state, "tavily"):
         return {"tavily_results": [], "tavily_answer": None}
-    topic = (state.get("topic") or "").strip()
+    raw_topic = (state.get("topic") or "").strip()
+    topic = _query(state)
     limit = int(state.get("limit") or 8)
+    yt = wants_youtube(raw_topic) or "site:youtube.com" in topic.lower()
+    search_q = topic
+    if yt and "site:youtube.com" not in topic.lower():
+        search_q = build_web_search_query(raw_topic, youtube=True)
     try:
-        results, answer, images = search_web(topic=topic, limit=limit)
+        results, answer, images = search_web(
+            topic=search_q,
+            limit=limit,
+            time_range=None if yt else "month",
+        )
         items = [
             ResearchItem(
                 title=r.title,
@@ -79,6 +98,7 @@ def tavily_node(state: MultiSourceState) -> dict:
             )
             for r in results
         ]
+        items = filter_tavily_results(raw_topic or search_q, items, limit=limit)
         media = [i.image_url for i in items if i.image_url]
         for u in images:
             if u not in media:
@@ -99,7 +119,7 @@ def tavily_node(state: MultiSourceState) -> dict:
 def news_node(state: MultiSourceState) -> dict:
     if not _enabled(state, "news"):
         return {"news_results": []}
-    topic = (state.get("topic") or "").strip()
+    topic = _query(state)
     limit = min(int(state.get("limit") or 8), 10)
     try:
         items = search_news(topic=topic, limit=limit)
@@ -108,10 +128,19 @@ def news_node(state: MultiSourceState) -> dict:
         return {"news_results": [], "errors": {"news": str(exc)}}
 
 
+def _papers_query(state: MultiSourceState) -> str:
+    return (
+        state.get("papers_search_query")
+        or state.get("search_query")
+        or state.get("topic")
+        or ""
+    ).strip()
+
+
 def papers_node(state: MultiSourceState) -> dict:
     if not _enabled(state, "papers"):
         return {"papers_results": []}
-    topic = (state.get("topic") or "").strip()
+    topic = _papers_query(state)
     limit = min(int(state.get("limit") or 8), 8)
     try:
         items = search_papers(topic=topic, limit=limit)
@@ -123,7 +152,7 @@ def papers_node(state: MultiSourceState) -> dict:
 def github_node(state: MultiSourceState) -> dict:
     if not _enabled(state, "github"):
         return {"github_results": []}
-    topic = (state.get("topic") or "").strip()
+    topic = _query(state)
     limit = min(int(state.get("limit") or 8), 10)
     try:
         items = search_github_repos(topic=topic, limit=limit)
@@ -243,11 +272,19 @@ def run_multi_source_research(
     with_report: bool = False,
     category: str | None = None,
     sources: List[str] | None = None,
+    search_query: str | None = None,
+    routing: ResearchRoutingPlan | None = None,
 ) -> MultiSourceResearchResult:
     resolved = resolve_sources(category=category, sources=sources)
+    query = (search_query or topic).strip()
+    papers_query = (
+        routing.papers_search_query if routing and routing.papers_search_query else None
+    )
     final = research_graph.invoke(
         {
             "topic": topic,
+            "search_query": query,
+            "papers_search_query": papers_query,
             "limit": limit,
             "with_report": with_report,
             "category": category or "general",
@@ -267,20 +304,23 @@ def run_multi_source_research(
         except Exception:
             report = None
 
-    return MultiSourceResearchResult(
-        topic=topic,
-        category=category or "general",
-        sources_used=list(resolved),
-        tavily_results=_normalize_items(final.get("tavily_results"), "tavily"),
-        news_results=_normalize_items(final.get("news_results"), "news"),
-        papers_results=_normalize_items(final.get("papers_results"), "papers"),
-        github_results=_normalize_items(final.get("github_results"), "github"),
-        tavily_answer=final.get("tavily_answer"),
-        media_urls=[str(u) for u in (final.get("media_urls") or []) if u],
-        errors={str(k): str(v) for k, v in errors.items()},
-        report=report,
-        report_error=final.get("report_error"),
-        fetched_at=datetime.now(timezone.utc),
+    return reclassify_results(
+        MultiSourceResearchResult(
+            topic=topic,
+            category=category or "general",
+            routing=routing,
+            sources_used=list(resolved),
+            tavily_results=_normalize_items(final.get("tavily_results"), "tavily"),
+            news_results=_normalize_items(final.get("news_results"), "news"),
+            papers_results=_normalize_items(final.get("papers_results"), "papers"),
+            github_results=_normalize_items(final.get("github_results"), "github"),
+            tavily_answer=final.get("tavily_answer"),
+            media_urls=[str(u) for u in (final.get("media_urls") or []) if u],
+            errors={str(k): str(v) for k, v in errors.items()},
+            report=report,
+            report_error=final.get("report_error"),
+            fetched_at=datetime.now(timezone.utc),
+        )
     )
 
 

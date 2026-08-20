@@ -18,12 +18,20 @@ from app.schemas.research import (
 )
 from app.services.report_export import report_to_html, report_to_markdown
 from app.services.report_synthesizer import synthesize_report
+from app.services.research_chat import (
+    ResearchChatResponse,
+    answer_from_context,
+    build_opening_summary,
+    expand_research,
+    handle_followup,
+)
 from app.services.research_categories import (
     ALL_SOURCES,
     CATEGORY_LABELS,
     CATEGORY_SOURCES,
     resolve_sources,
 )
+from app.services.topic_router import route_topic
 from app.services import research_cache
 
 router = APIRouter(prefix="/api", tags=["Research"])
@@ -31,10 +39,23 @@ router = APIRouter(prefix="/api", tags=["Research"])
 
 class WebResearchRequest(BaseModel):
     topic: str = Field(..., min_length=1, description="Topic to research")
-    limit: int = Field(default=8, ge=1, le=20)
+    limit: int | None = Field(
+        default=None,
+        ge=1,
+        le=20,
+        description="Override per-source limit (auto-set when auto_route=true)",
+    )
+    run_mode: str = Field(
+        default="research",
+        description="quick | research | deep | plan",
+    )
+    auto_route: bool = Field(
+        default=True,
+        description="Infer domain, intent, sources from topic",
+    )
     category: str | None = Field(
-        default="general",
-        description="Preset: general | ai_engineer | founder | academic | news_desk",
+        default=None,
+        description="Manual preset when auto_route=false",
     )
     sources: list[str] | None = Field(
         default=None,
@@ -44,6 +65,56 @@ class WebResearchRequest(BaseModel):
         default=False,
         description="Bypass cache and fetch fresh sources",
     )
+
+
+class RouteRequest(BaseModel):
+    topic: str = Field(..., min_length=1)
+    run_mode: str = Field(default="research")
+
+
+class ChatTurn(BaseModel):
+    role: str = Field(..., description="user | assistant")
+    content: str = Field(..., min_length=1)
+
+
+class ResearchChatRequest(BaseModel):
+    question: str = Field(..., min_length=1)
+    messages: list[ChatTurn] = Field(default_factory=list)
+    research: MultiSourceResearchResult
+    auto_expand: bool = Field(
+        default=False,
+        description="When true, run proposed research immediately (always-allow mode)",
+    )
+
+
+class ExpandResearchRequest(BaseModel):
+    question: str = Field(..., min_length=1)
+    query: str = Field(..., min_length=1)
+    sources: list[str] = Field(default_factory=lambda: ["tavily"])
+    research: MultiSourceResearchResult
+    messages: list[ChatTurn] = Field(default_factory=list)
+
+
+def _resolve_gather(request: WebResearchRequest):
+    """Return (routing_plan, category, sources, limit, search_query)."""
+    mode = request.run_mode if request.run_mode in {
+        "quick",
+        "research",
+        "deep",
+        "plan",
+    } else "research"
+
+    if request.auto_route and not request.sources:
+        plan = route_topic(request.topic.strip(), run_mode=mode)  # type: ignore[arg-type]
+        limit = request.limit if request.limit is not None else plan.limit
+        return plan, plan.category, list(plan.sources), limit, plan.search_query
+
+    resolved = resolve_sources(
+        category=request.category or "general",
+        sources=request.sources,
+    )
+    limit = request.limit if request.limit is not None else 6
+    return None, request.category or "general", resolved, limit, request.topic.strip()
 
 
 class SynthesizeRequest(BaseModel):
@@ -98,7 +169,82 @@ async def research_health():
         "synthesize": True,
         "exports": ["markdown", "html", "json"],
         "cache": True,
+        "auto_route": True,
+        "run_modes": ["quick", "research", "deep", "plan"],
+        "chat": True,
     }
+
+
+@router.post("/research/route", summary="Preview auto-routing for a topic")
+async def research_route(request: RouteRequest):
+    mode = request.run_mode if request.run_mode in {
+        "quick",
+        "research",
+        "deep",
+        "plan",
+    } else "research"
+    try:
+        return route_topic(request.topic.strip(), run_mode=mode)  # type: ignore[arg-type]
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post(
+    "/research/chat",
+    response_model=ResearchChatResponse,
+    summary="Follow-up chat grounded in research",
+)
+async def research_chat(request: ResearchChatRequest):
+    try:
+        return handle_followup(
+            question=request.question.strip(),
+            research=request.research,
+            history=[m.model_dump() for m in request.messages],
+            auto_expand=request.auto_expand,
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Chat failed: {exc}",
+        ) from exc
+
+
+@router.post(
+    "/research/expand",
+    response_model=ResearchChatResponse,
+    summary="Run targeted research and answer follow-up",
+)
+async def research_expand(request: ExpandResearchRequest):
+    try:
+        sources = [s for s in request.sources if s in ALL_SOURCES]
+        if not sources:
+            sources = ["tavily"]
+        expanded = expand_research(
+            research=request.research,
+            query=request.query.strip(),
+            sources=sources,  # type: ignore[arg-type]
+        )
+        answer = answer_from_context(
+            question=request.question.strip(),
+            research=expanded,
+            history=[m.model_dump() for m in request.messages],
+        )
+        return ResearchChatResponse(
+            answer=answer,
+            action="none",
+            related=True,
+            research=expanded,
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Expand research failed: {exc}",
+        ) from exc
+
+
+@router.post("/research/summary", summary="Opening assistant summary for a gather result")
+async def research_summary(result: MultiSourceResearchResult):
+    return {"summary": build_opening_summary(result)}
 
 
 @router.post(
@@ -133,15 +279,13 @@ async def research_tavily(request: WebResearchRequest):
 )
 async def research_multi(request: WebResearchRequest):
     try:
-        resolved = resolve_sources(
-            category=request.category,
-            sources=request.sources,
-        )
+        routing, category, resolved, limit, search_query = _resolve_gather(request)
         key = research_cache.multi_cache_key(
             request.topic,
-            request.limit,
-            category=request.category,
+            limit,
+            category=category,
             sources=list(resolved),
+            run_mode=routing.run_mode if routing else request.run_mode,
         )
         if not request.force_refresh:
             hit = research_cache.get_cached(key, MultiSourceResearchResult)
@@ -150,14 +294,18 @@ async def research_multi(request: WebResearchRequest):
                 hit.cache_key = key
                 hit.report = None
                 hit.report_error = None
+                if routing and not hit.routing:
+                    hit.routing = routing
                 return hit
 
         result = run_multi_source_research(
-            topic=request.topic,
-            limit=request.limit,
+            topic=request.topic.strip(),
+            limit=limit,
             with_report=False,
-            category=request.category,
+            category=category,
             sources=list(resolved),
+            search_query=search_query,
+            routing=routing,
         )
         if _result_total(result) == 0 and result.errors:
             raise HTTPException(
@@ -249,15 +397,13 @@ async def research_synthesize(request: SynthesizeRequest):
 )
 async def research_report(request: WebResearchRequest):
     try:
-        resolved = resolve_sources(
-            category=request.category,
-            sources=request.sources,
-        )
+        routing, category, resolved, limit, search_query = _resolve_gather(request)
         multi_key = research_cache.multi_cache_key(
             request.topic,
-            request.limit,
-            category=request.category,
+            limit,
+            category=category,
             sources=list(resolved),
+            run_mode=routing.run_mode if routing else request.run_mode,
         )
         base: MultiSourceResearchResult | None = None
         if not request.force_refresh:
@@ -265,11 +411,13 @@ async def research_report(request: WebResearchRequest):
 
         if base is None:
             base = run_multi_source_research(
-                topic=request.topic,
-                limit=request.limit,
+                topic=request.topic.strip(),
+                limit=limit,
                 with_report=False,
-                category=request.category,
+                category=category,
                 sources=list(resolved),
+                search_query=search_query,
+                routing=routing,
             )
             if _result_total(base) == 0 and base.errors:
                 raise HTTPException(
