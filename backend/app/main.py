@@ -2,6 +2,7 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.investigation import router as investigation_router
 from app.api.research import router as research_router
 from app.api.session import router as session_router
 
@@ -35,6 +36,10 @@ app.include_router(research_router)
 # checkpointer — sessions live only in this process's memory, so this only
 # works correctly with a single uvicorn worker (no --workers > 1).
 app.include_router(session_router)
+# investigation_router (Director -> Specialists -> Evidence -> Synthesis
+# pipeline, phase 1: Director only) — also MemorySaver-backed, same
+# single-worker constraint as session_router.
+app.include_router(investigation_router)
 
 
 @app.get("/")
