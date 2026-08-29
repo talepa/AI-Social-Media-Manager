@@ -53,11 +53,15 @@ def test_compile_report_cites_claims_and_sources():
     plan, sources, evidence = _fixtures()
     report = compile_report(plan=plan, evidence=evidence, sources=sources)
     assert report.mode == "compile"
-    assert "CLAIM-001" in report.markdown
     assert "WEB-001" in report.markdown
     assert "CLAIM-001" in report.cited_claim_ids
     assert "WEB-001" in report.cited_source_ids
-    assert any(s.title == "Key claims" for s in report.sections)
+    assert any(s.title == "Short answer" for s in report.sections)
+    assert any(s.title == "Details" for s in report.sections)
+    details = next(s for s in report.sections if s.title == "Details")
+    assert "(WEB-" not in details.body
+    assert "[[" in details.body  # footnote encoding for UI
+    assert "CLAIM-001" in details.claim_ids
 
 
 def test_citation_validation_passes_for_compile():

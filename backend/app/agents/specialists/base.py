@@ -151,10 +151,25 @@ def run_specialist(
             if tool_calls_used >= max_tool_calls:
                 break
 
-        findings = _extract_findings(
-            llm, messages, sub_question, specialist_name, collected_sources,
-        )
-        llm_calls_used += 1
+        try:
+            findings = _extract_findings(
+                llm, messages, sub_question, specialist_name, collected_sources,
+            )
+            llm_calls_used += 1
+        except Exception as exc:
+            logger.warning(
+                "specialist %s: findings extraction failed (%s) — using source snippets",
+                specialist_name,
+                exc,
+            )
+            findings = _findings_from_sources(
+                sub_question, specialist_name, collected_sources,
+            )
+
+        if not findings and collected_sources:
+            findings = _findings_from_sources(
+                sub_question, specialist_name, collected_sources,
+            )
 
         return SpecialistResult(
             specialist=specialist_name,
@@ -167,14 +182,75 @@ def run_specialist(
 
     except Exception as exc:
         logger.exception("specialist %s failed", specialist_name)
+        fallback_findings = (
+            _findings_from_sources(sub_question, specialist_name, collected_sources)
+            if collected_sources
+            else []
+        )
         return SpecialistResult(
             specialist=specialist_name,
             sub_question_id=sub_question.id,
             sources=collected_sources,
+            findings=fallback_findings,
             tool_calls_used=tool_calls_used,
             llm_calls_used=llm_calls_used,
             error=str(exc),
         )
+
+
+def _clean_snippet(text: str) -> str:
+    """Normalize scraped text (collapse whitespace, unstick CamelCase glue)."""
+    text = (text or "").replace("\xa0", " ")
+    text = re.sub(r"\s+", " ", text).strip()
+    # "ManagementInvoicing" → "Management Invoicing" (common scrape artifact)
+    text = re.sub(r"([a-z])([A-Z])", r"\1 \2", text)
+    text = re.sub(r"([A-Za-z])(\d)", r"\1 \2", text)
+    return text.strip()
+
+
+def _findings_from_sources(
+    sub_question: SubQuestion,
+    specialist_name: SpecialistName,
+    sources: List[SourceRecord],
+) -> List[ResearchFinding]:
+    """Deterministic findings from retrieved snippets when LLM extraction fails."""
+    findings: List[ResearchFinding] = []
+    for i, src in enumerate(sources[:6], 1):
+        snippet = _clean_snippet(src.content or "") or _clean_snippet(src.title or "")
+        if not snippet:
+            continue
+        # Prefer a concise claim: first sentence / title-led summary
+        claim = snippet.split(". ")[0].strip()
+        if len(claim) > 220:
+            claim = claim[:217].rstrip() + "…"
+        if len(claim) < 20 and src.title:
+            claim = _clean_snippet(f"{src.title}: {snippet[:160]}")
+        findings.append(
+            ResearchFinding(
+                id=f"F-{i:03d}",
+                sub_question_id=sub_question.id,
+                specialist=specialist_name,
+                claim=claim or f"Relevant source for: {sub_question.text}",
+                evidence_summary=snippet[:400],
+                source_ids=[src.id],
+                confidence=0.45,
+                methodology_note="Derived from source snippet (deterministic fallback)",
+            )
+        )
+    if not findings and sources:
+        findings.append(
+            ResearchFinding(
+                id="F-001",
+                sub_question_id=sub_question.id,
+                specialist=specialist_name,
+                claim=f"Sources retrieved for: {sub_question.text}",
+                evidence_summary=sources[0].title or "See linked sources.",
+                source_ids=[s.id for s in sources[:3]],
+                confidence=0.3,
+                methodology_note="Derived from source list (deterministic fallback)",
+            )
+        )
+    return findings
 
 
 def _extract_findings(
@@ -207,18 +283,11 @@ def _extract_findings(
     try:
         data = json.loads(raw)
     except json.JSONDecodeError:
-        logger.warning("specialist %s: findings extraction returned invalid JSON", specialist_name)
-        return [
-            ResearchFinding(
-                id="F-001",
-                sub_question_id=sub_question.id,
-                specialist=specialist_name,
-                claim=f"Evidence gathered for: {sub_question.text}",
-                evidence_summary=raw[:300] if raw else "Findings extraction failed.",
-                source_ids=[s.id for s in sources[:3]],
-                confidence=0.3,
-            )
-        ]
+        logger.warning(
+            "specialist %s: findings extraction returned invalid JSON — fallback",
+            specialist_name,
+        )
+        return _findings_from_sources(sub_question, specialist_name, sources)
 
     if not isinstance(data, list):
         data = [data]
@@ -227,33 +296,31 @@ def _extract_findings(
     for i, item in enumerate(data, 1):
         if not isinstance(item, dict):
             continue
+        claim = str(item.get("claim", "")).strip()
+        if not claim:
+            continue
         source_indices = item.get("source_indices") or []
         source_ids = [
             sources[idx].id
             for idx in source_indices
             if isinstance(idx, int) and 0 <= idx < len(sources)
         ]
+        if not source_ids:
+            source_ids = [sources[min(i - 1, len(sources) - 1)].id]
         findings.append(ResearchFinding(
             id=f"F-{i:03d}",
             sub_question_id=sub_question.id,
             specialist=specialist_name,
-            claim=str(item.get("claim", "")),
-            evidence_summary=str(item.get("evidence_summary", "")),
+            claim=claim,
+            evidence_summary=str(item.get("evidence_summary", "")).strip(),
             source_ids=source_ids,
             confidence=min(1.0, max(0.0, float(item.get("confidence", 0.5)))),
             methodology_note=item.get("methodology_note"),
         ))
 
-    return findings or [
-        ResearchFinding(
-            id="F-001",
-            sub_question_id=sub_question.id,
-            specialist=specialist_name,
-            claim=f"Evidence gathered for: {sub_question.text}",
-            source_ids=[s.id for s in sources[:3]],
-            confidence=0.3,
-        )
-    ]
+    return findings or _findings_from_sources(
+        sub_question, specialist_name, sources,
+    )
 
 
 def _source_prefix(specialist: SpecialistName) -> str:
@@ -262,9 +329,27 @@ def _source_prefix(specialist: SpecialistName) -> str:
 
 def _source_type(specialist: SpecialistName, tool_name: str) -> str:
     type_map = {
+        # Legacy direct tools
         "tavily_search": "web",
         "news_search": "news",
         "papers_search": "papers",
         "github_search": "github",
+        # Research MCP
+        "search_web": "web",
+        "search_news": "news",
+        "fetch_url": "web",
+        "extract_content": "web",
+        "get_page_metadata": "web",
+        # Academic MCP
+        "search_papers": "papers",
+        "get_paper": "papers",
+        "get_citations": "papers",
+        "get_related_papers": "papers",
+        # Repository MCP
+        "search_repositories": "github",
+        "get_repository": "github",
+        "get_release_history": "github",
+        "get_activity": "github",
+        "get_issue_summary": "github",
     }
     return type_map.get(tool_name, "web")

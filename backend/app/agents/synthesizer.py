@@ -44,25 +44,69 @@ def compile_report(
     """Deterministic report from claims/gaps/conflicts — no LLM."""
     by_src = _source_lookup(sources)
     sections: List[ReportSection] = []
+    short_answer = ""
 
     if evidence.claims:
-        lines = []
-        claim_ids = []
+        claim_ids = [c.id for c in evidence.claims]
         source_ids: List[str] = []
         for c in evidence.claims:
-            claim_ids.append(c.id)
-            src_bits = ", ".join(c.supporting_source_ids[:4]) or "no sources"
-            lines.append(
-                f"- **{c.id}** ({c.strength}, conf={c.confidence:.2f}, "
-                f"agreement={c.agreement_count}): {c.claim} [{src_bits}]"
-            )
             source_ids.extend(c.supporting_source_ids)
+
+        # Short answer: 1–3 clean sentences, no raw source IDs in the prose
+        short_bits = [
+            c.claim.strip().rstrip(".")
+            for c in evidence.claims[:3]
+            if c.claim.strip()
+        ]
+        short_answer = ". ".join(short_bits)
+        if short_answer and not short_answer.endswith("."):
+            short_answer += "."
+
+        # Encode footnote source ids after each paragraph as [[WEB-001,WEB-002]]
+        # so the UI can render Wikipedia-style superscripts (not shown as raw IDs).
+        detail_blocks = []
+        for c in evidence.claims[:12]:
+            text = c.claim.strip()
+            if not text:
+                continue
+            refs = ",".join(c.supporting_source_ids[:4])
+            detail_blocks.append(f"{text}[[{refs}]]" if refs else text)
+
         sections.append(
             ReportSection(
-                title="Key claims",
-                body="\n".join(lines),
+                title="Short answer",
+                body=short_answer,
+                claim_ids=claim_ids[:3],
+                source_ids=sorted(set(source_ids)),
+            )
+        )
+        sections.append(
+            ReportSection(
+                title="Details",
+                body="\n\n".join(detail_blocks),
                 claim_ids=claim_ids,
                 source_ids=sorted(set(source_ids)),
+            )
+        )
+    elif sources:
+        # Last resort: summarize from retrieved sources if claims missing
+        lines = []
+        sids = []
+        for s in sources[:10]:
+            sids.append(s.id)
+            bit = (s.content or "").strip()
+            if bit:
+                lines.append(f"**{s.title or s.id}** — {bit[:280]}")
+            else:
+                lines.append(f"**{s.title or s.id}** — {s.url}")
+        sections.append(
+            ReportSection(
+                title="Answer",
+                body=(
+                    "Structured claims were incomplete, so here is what the "
+                    "retrieved sources say:\n\n" + "\n\n".join(lines)
+                ),
+                source_ids=sids,
             )
         )
 
@@ -80,11 +124,11 @@ def compile_report(
             )
         )
 
-    if evidence.gaps:
-        body = "\n".join(f"- **{g.id}**: {g.description}" for g in evidence.gaps)
-        sections.append(ReportSection(title="Evidence gaps", body=body))
+    if evidence.gaps and evidence.claims:
+        # Only surface gaps when we also have some answer — avoid gap-only memos
+        body = "\n".join(f"- {g.description}" for g in evidence.gaps[:6])
+        sections.append(ReportSection(title="Open questions", body=body))
 
-    # Source appendix (cited only)
     cited_sources = sorted(
         {
             sid
@@ -93,10 +137,15 @@ def compile_report(
             if sid in by_src
         }
     )
+    if not cited_sources:
+        cited_sources = [s.id for s in sources if s.id][:20]
+
     if cited_sources:
         lines = []
         for sid in cited_sources[:20]:
-            s = by_src[sid]
+            s = by_src.get(sid)
+            if not s:
+                continue
             lines.append(f"- **{sid}** ({s.type}): {s.title} — {s.url}")
         sections.append(
             ReportSection(
@@ -106,15 +155,14 @@ def compile_report(
             )
         )
 
-    headline = (
-        f"Investigation report: {plan.objective}"
-        if plan.objective
-        else "Investigation report"
-    )
+    headline = plan.objective if plan.objective else "Investigation report"
 
-    exec_summary = evidence.summary or (
-        f"Reviewed {len(evidence.claims)} claims across {len(cited_sources)} sources."
-    )
+    if short_answer:
+        exec_summary = short_answer
+    else:
+        exec_summary = evidence.summary or (
+            f"Retrieved {len(sources)} sources for: {plan.objective}"
+        )
 
     cited_claim_ids = [c.id for c in evidence.claims]
     markdown = _to_markdown(headline, exec_summary, sections)

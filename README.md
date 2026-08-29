@@ -136,13 +136,20 @@ Session + investigation graphs share `get_checkpointer()`: **PostgresSaver** whe
 |---|---|---|
 | `POST` | `/api/investigation/runs` | Sync investigation — plan, findings, evidence, cited report (`use_llm` optional) |
 | `POST` | `/api/investigation/runs/stream` | Same run over **SSE** (`accepted` → `progress`/`node` → `complete`) |
-| `GET` | `/api/investigation/runs/{run_id}` | Fetch stored run status/result (in-memory; lost on restart) |
+| `GET` | `/api/investigation/runs/{run_id}` | Fetch stored run status/result (Postgres or memory) |
+
+### MCP
+
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/api/mcp/capabilities` | Discover first-party MCP servers + tools |
+| `GET` | `/api/mcp/stats` | Process MCP tool-call counts |
 
 ### Health
 
 | Method | Path | Purpose |
 |---|---|---|
-| `GET` | `/health` | Process health + `checkpointer` / `investigation_store` backends |
+| `GET` | `/health` | Process health + `checkpointer` / `investigation_store` / `mcp` |
 | `GET` | `/api/health/research` | Graph / source status |
 
 ---
@@ -156,8 +163,7 @@ Session + investigation graphs share `get_checkpointer()`: **PostgresSaver** whe
 | **Papers** | Semantic Scholar, OpenAlex, Crossref, arXiv | Optional `SEMANTIC_SCHOLAR_API_KEY` | Academic papers, citations |
 | **GitHub** | GitHub Search API | Optional `GITHUB_TOKEN` | Repos, activity, implementation maturity |
 
-Planned: web search for the investigation Web specialist uses **Tavily** (same provider as the research desk).
-
+Investigation specialists call these providers through **first-party MCP servers** (`USE_MCP=true` by default): Research, Academic, Repository. Set `USE_MCP=false` to fall back to direct LangChain tools.
 ---
 
 ## Research Modes
@@ -241,35 +247,15 @@ backend/
 
 ## Frontend Structure
 
-```
-frontend/src/
-├── app/
-│   ├── page.tsx                    # Studio, loader, results, API calls
-│   └── layout.tsx                  # Fonts, metadata
-│
-├── components/
-│   ├── HeroHome.tsx                # Landing page
-│   ├── GeminiThread.tsx            # Chat thread UI
-│   ├── ResearchChat.tsx            # Research chat interface
-│   ├── SourcePanel.tsx             # Source detail panel
-│   ├── ChatSidebar.tsx             # Chat sidebar
-│   ├── PromptShell.tsx             # Input shell
-│   ├── PlanView.tsx                # Action plan view
-│   ├── ResearchProgress.tsx        # Loading/progress
-│   ├── SourceThumb.tsx             # Source thumbnail
-│   └── AtelierMark.tsx             # Brand mark
-│
-└── lib/
-    ├── productConfig.ts            # Modes, depths, presets
-    ├── productTypes.ts             # TypeScript types
-    ├── chatHistory.ts              # Chat history state
-    ├── reportDownload.ts           # Export helpers
-    ├── researchPermission.ts       # Permission checks
-    ├── planTypes.ts                # Plan TypeScript types
-    ├── partitionResults.ts         # Result partitioning
-    ├── shareResearch.ts            # Share functionality
-    └── sourceThumb.ts              # Source thumbnail logic
-```
+Simple flow: **search → loading → answer + sources**.
+
+| Route | Purpose |
+|---|---|
+| `/` | Search home |
+| `/commission` | Same search (alias) |
+| `/investigate` | Loading screen, then answer + sources |
+
+API base: `NEXT_PUBLIC_API_URL` (default `http://localhost:8001`).
 
 ---
 
@@ -280,7 +266,7 @@ frontend/src/
 | **Backend** | FastAPI, Uvicorn, Pydantic |
 | **Orchestration** | LangGraph (>=1.2.9), LangChain Core |
 | **AI** | Google Gemini (`langchain-google-genai`), structured output |
-| **Frontend** | Next.js 16, React 19, TypeScript, Tailwind CSS v4 |
+| **Frontend** | Next.js 16, React 19, TypeScript, Tailwind CSS v4, IBM Plex |
 | **Typography** | Bodoni Moda (display), Instrument Sans (body) |
 | **Testing** | pytest, pytest-asyncio |
 | **Infrastructure** | Docker Compose (optional), disk cache, python-dotenv |
@@ -307,6 +293,7 @@ cp .env.example .env
 | `DATABASE_URL` | No | PostgreSQL for LangGraph checkpoints + investigation runs |
 | `LANGGRAPH_CHECKPOINT` | No | `auto` (default) \| `postgres` \| `memory` |
 | `INVESTIGATION_STORE` | No | `auto` (default) \| `postgres` \| `memory` |
+| `USE_MCP` | No | `true` (default) — specialists use MCP tools |
 
 ---
 
@@ -355,13 +342,19 @@ cd backend
 - [x] **Optional LLM polish** — `use_llm` on investigation runs (default off)
 - [x] **Failure isolation + observability** — specialist/evidence/synthesis fallbacks + richer events
 - [x] **PostgreSQL checkpointer + durable run store** — auto-fallback to memory when DB is down
+- [x] **MCP capability layer** — Research / Academic / Repository servers + specialist scoping
 
 ### In Progress
 
 ### Planned
 
-- [ ] MCP capability layer around provider services
-- [ ] Frontend redesign (Technical Intelligence Observatory aesthetic)
+- [ ] Critic + bounded gap-fill (V2)
+- [ ] Evaluation benchmark
+
+### Completed (frontend)
+
+- [x] **Technical Intelligence Observatory UI** — landing, commission, live SSE observatory, evidence workspace, technical memo report
+
 
 ---
 
