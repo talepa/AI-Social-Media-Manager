@@ -163,6 +163,38 @@ class ResearchReport(BaseModel):
     mode: Literal["compile", "llm"] = "compile"
 
 
+class PlanStep(BaseModel):
+    title: str
+    detail: str
+    timeframe: Optional[str] = None
+
+
+class PlanResource(BaseModel):
+    title: str
+    url: str
+    kind: SourceType
+    note: Optional[str] = None
+
+
+class PlanSection(BaseModel):
+    id: str
+    title: str
+    items: List[str] = Field(default_factory=list)
+    steps: List[PlanStep] = Field(default_factory=list)
+    resources: List[PlanResource] = Field(default_factory=list)
+
+
+class ResearchPlan(BaseModel):
+    topic: str
+    template: str = Field(description="compare | learning | health | business | build | general")
+    headline: str
+    goal: str
+    success_criteria: List[str] = Field(default_factory=list)
+    sections: List[PlanSection] = Field(default_factory=list)
+    next_actions: List[str] = Field(default_factory=list)
+    mode: Literal["compile", "llm"] = "compile"
+
+
 class MultiSourceResearchResult(BaseModel):
     topic: str
     category: Optional[str] = Field(

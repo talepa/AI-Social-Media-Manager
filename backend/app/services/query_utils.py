@@ -31,6 +31,35 @@ _LEADING_NOISE = re.compile(
     re.I,
 )
 
+_PLAN_LEADING = re.compile(
+    r"^(?:please\s+)?(?:give me|create|make|build|need|want)\s+"
+    r"(?:a\s+)?(?:plan|roadmap|strategy|outline|syllabus)\s+"
+    r"(?:for|to|on|about)\s+(?:my\s+)?",
+    re.I,
+)
+
+_PLAN_TRAILING = re.compile(
+    r"\s+(?:i want to|i need to|i'd like to|help me)\s+"
+    r"(?:switch|transition|change|move|get).*$",
+    re.I,
+)
+
+_CAREER_RE = re.compile(
+    r"\b(career|switch|transition|job change|new role|become|break into|getting into)\b",
+    re.I,
+)
+
+_ROADMAP_RE = re.compile(
+    r"\b(roadmap|learning path|study path|syllabus|milestones|curriculum)\b",
+    re.I,
+)
+
+_AI_CAREER_RE = re.compile(
+    r"\b(ai engineer|ml engineer|machine learning engineer|llm engineer|"
+    r"ai/ml engineer|data scientist|mle|artificial intelligence engineer)\b",
+    re.I,
+)
+
 _TRAILING_NOISE = re.compile(
     r"\s+(?:please|thanks|thank you)\.?$",
     re.I,
@@ -89,6 +118,46 @@ def core_search_phrase(topic: str) -> str:
     if terms:
         return " ".join(terms)
     return normalize_topic(topic)
+
+
+def extract_plan_subject(topic: str) -> str:
+    """Core subject for plan mode — strips plan/career boilerplate."""
+    t = normalize_topic(topic)
+    t = _PLAN_LEADING.sub("", t)
+    t = re.sub(r"^a plan for (?:my\s+)?", "", t, flags=re.I)
+    t = _PLAN_TRAILING.sub("", t)
+    t = re.sub(r"\s+for that\.?$", "", t, flags=re.I)
+    t = " ".join(t.split())
+    if len(t) >= 4:
+        return t
+    return normalize_topic(topic)
+
+
+def is_career_roadmap(topic: str) -> bool:
+    return bool(_CAREER_RE.search(topic) or _ROADMAP_RE.search(topic))
+
+
+def is_ai_career_topic(topic: str) -> bool:
+    return bool(_AI_CAREER_RE.search(topic))
+
+
+def build_plan_search_query(topic: str) -> str:
+    """Focused web/GitHub query for plan-mode gathers."""
+    subject = extract_plan_subject(topic)
+    parts = [subject]
+    if is_ai_career_topic(topic):
+        if not re.search(r"\broadmap\b", subject, re.I):
+            parts.append("roadmap")
+        if _CAREER_RE.search(topic) and not re.search(
+            r"\b(career|transition|switch)\b", subject, re.I
+        ):
+            parts.append("career transition")
+        return " ".join(parts)
+    if is_career_roadmap(topic) and not re.search(
+        r"\b(roadmap|guide|path)\b", subject, re.I
+    ):
+        parts.append("roadmap guide")
+    return " ".join(parts)
 
 
 def build_web_search_query(topic: str, *, youtube: bool = False) -> str:

@@ -22,7 +22,9 @@ from app.schemas.research import (
 from app.services.research_categories import ALL_SOURCES, ResearchSource
 from app.services.query_utils import (
     build_web_search_query,
+    build_plan_search_query,
     core_search_phrase,
+    extract_plan_subject,
     normalize_topic,
     wants_tutorial,
     wants_youtube,
@@ -150,6 +152,19 @@ def _sources_for(
 ) -> list[ResearchSource]:
     wants_papers = _wants_academic_sources(text, intent)
 
+    if run_mode == "plan":
+        if intent == "compare" or _COMPARE_RE.search(text):
+            return ["tavily", "github", "news"]
+        if domain == "software" or intent == "technical":
+            return ["tavily", "github", "papers"]
+        if domain == "health":
+            return ["tavily", "papers"]
+        if domain == "business" or domain == "current_events":
+            return ["tavily", "news"]
+        if intent == "academic" or domain == "science":
+            return ["papers", "tavily"]
+        return ["tavily", "news"]
+
     # Video / tutorial asks — web only, YouTube-targeted query (skip noisy news)
     if wants_youtube(text) or (wants_tutorial(text) and domain in ("software", "general")):
         return ["tavily"]
@@ -241,6 +256,11 @@ def _compose_reason(
 ) -> str:
     src_labels = ", ".join(sources)
     extra = ""
+    if run_mode == "plan":
+        return (
+            f"Plan mode · {domain.replace('_', ' ')} · {intent} "
+            f"→ gather {src_labels}, then structured action template"
+        )
     if "papers" not in sources:
         extra = " (web-focused — no academic papers for this question)"
     return (
@@ -354,6 +374,10 @@ def route_topic(
     category = _legacy_category(domain, intent)
     reason = _compose_reason(domain, intent, run_mode, sources)
     search_query, papers_search_query = _build_queries(cleaned, domain, sources)
+    if run_mode == "plan":
+        search_query = build_plan_search_query(cleaned)
+        if domain == "software" or intent == "technical":
+            papers_search_query = f"{extract_plan_subject(cleaned)} machine learning career"
 
     if confidence < 0.55:
         method: RoutingMethod = "fallback"

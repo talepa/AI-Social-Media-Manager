@@ -29,7 +29,7 @@ export const RUN_MODES: {
   {
     id: "plan",
     label: "Plan",
-    hint: "Route + structured brief",
+    hint: "Structured template plan from your sources",
     icon: "◎",
   },
 ];

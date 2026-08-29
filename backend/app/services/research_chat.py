@@ -21,9 +21,12 @@ from app.services.github_utils import (
     rank_github_items,
 )
 from app.services.result_classifier import reclassify_results
+from app.services.plan_synthesizer import synthesize_plan
 from app.services.topic_router import route_topic
 
 logger = logging.getLogger(__name__)
+
+RunMode = Literal["quick", "research", "deep", "plan"]
 
 ChatTurn = dict[str, str]
 
@@ -40,6 +43,25 @@ _LEARN_RE = re.compile(
     r"getting started|certification|study path|roadmap)\b",
     re.I,
 )
+_PLAN_RE = re.compile(
+    r"\b(plan|roadmap|step by step|action plan|learning path|syllabus|"
+    r"milestones|outline|strategy|steps to|how should i)\b",
+    re.I,
+)
+_DEEP_RE = re.compile(
+    r"\b(deep dive|comprehensive|thorough|in depth|full research|"
+    r"detailed research|more sources|all sources|dig deeper)\b",
+    re.I,
+)
+_SOURCES_RE = re.compile(
+    r"\b(articles?|videos?|sources|repos?|github|youtube|find me|search for|"
+    r"show me links|evidence|papers)\b",
+    re.I,
+)
+_QUICK_RE = re.compile(
+    r"\b(quick|brief|short answer|tl;dr|just tell me|summary only|keep it short)\b",
+    re.I,
+)
 _STOP = {
     "the", "and", "for", "are", "what", "how", "does", "from", "with", "that",
     "this", "have", "any", "there", "about", "best", "way", "tell", "give",
@@ -52,12 +74,21 @@ class ResearchProposal(BaseModel):
     reason: str
 
 
+class ModeSwitchProposal(BaseModel):
+    suggested_mode: RunMode
+    reason: str
+    query: str = ""
+
+
 class ResearchChatResponse(BaseModel):
     answer: str
-    action: Literal["none", "propose_research"] = "none"
+    action: Literal["none", "propose_research", "propose_mode_switch"] = "none"
     proposal: Optional[ResearchProposal] = None
+    mode_proposal: Optional[ModeSwitchProposal] = None
     related: bool = True
     research: Optional[MultiSourceResearchResult] = None
+    plan: Optional[dict] = None
+    plan_markdown: Optional[str] = None
 
 
 class FollowupAnalysis(BaseModel):
@@ -198,7 +229,79 @@ def _has_learning_snippets(research: MultiSourceResearchResult, subject: str) ->
     )
 
 
-def analyze_followup(question: str, research: MultiSourceResearchResult) -> FollowupAnalysis:
+_MODE_LABELS: dict[str, str] = {
+    "quick": "Quick",
+    "research": "Research",
+    "deep": "Deep",
+    "plan": "Plan",
+}
+
+
+def detect_mode_switch(question: str, current_mode: RunMode) -> Optional[ModeSwitchProposal]:
+    q = question.strip()
+    if not q:
+        return None
+
+    if _PLAN_RE.search(q) and current_mode != "plan":
+        return ModeSwitchProposal(
+            suggested_mode="plan",
+            reason=(
+                "You asked for a structured plan or roadmap. Plan mode focuses on "
+                "steps and milestones instead of article summaries."
+            ),
+            query=q,
+        )
+
+    if current_mode == "plan" and (_SOURCES_RE.search(q) or _DEEP_RE.search(q)):
+        return ModeSwitchProposal(
+            suggested_mode="deep",
+            reason=(
+                "You asked for articles, videos, or deeper sources. Plan mode keeps "
+                "evidence collapsed — Deep mode surfaces full source cards."
+            ),
+            query=q,
+        )
+
+    if _DEEP_RE.search(q) and current_mode in ("quick", "plan"):
+        return ModeSwitchProposal(
+            suggested_mode="deep",
+            reason="This follow-up needs a broader, deeper source gather.",
+            query=q,
+        )
+
+    if _QUICK_RE.search(q) and current_mode in ("deep", "research", "plan"):
+        return ModeSwitchProposal(
+            suggested_mode="quick",
+            reason="You asked for a brief answer without a full evidence pass.",
+            query=q,
+        )
+
+    if _SOURCES_RE.search(q) and current_mode == "quick":
+        return ModeSwitchProposal(
+            suggested_mode="research",
+            reason="Finding articles and links works better in Research or Deep mode.",
+            query=q,
+        )
+
+    return None
+
+
+def _plan_followup_answer(question: str, research: MultiSourceResearchResult) -> tuple[str, dict, str]:
+    plan, markdown, _err = synthesize_plan(research, research.routing, use_llm=False)
+    headline = plan.headline or research.topic
+    answer = (
+        f"Updated plan for your follow-up — see structured sections below.\n\n"
+        f"**{headline}**"
+    )
+    return answer, plan.model_dump(), markdown
+
+
+def analyze_followup(
+    question: str,
+    research: MultiSourceResearchResult,
+    *,
+    current_mode: RunMode = "research",
+) -> FollowupAnalysis:
     q = question.strip()
     if not _is_related(q, research):
         return FollowupAnalysis(
@@ -212,6 +315,9 @@ def analyze_followup(question: str, research: MultiSourceResearchResult) -> Foll
             ),
         )
 
+    if current_mode == "plan" and _PLAN_RE.search(q):
+        return FollowupAnalysis(mode="answer")
+
     if _YOUTUBE_RE.search(q) and _GITHUB_RE.search(q):
         subject = _extract_subject(q, research)
         terms = " ".join(extract_github_search_terms(subject))
@@ -223,6 +329,18 @@ def analyze_followup(question: str, research: MultiSourceResearchResult) -> Foll
             user_message=(
                 f"I can search for **{subject}** YouTube tutorials and GitHub repos — "
                 "allow once to add both tabs on the right."
+            ),
+        )
+
+    if current_mode == "plan" and (_SOURCES_RE.search(q) or _YOUTUBE_RE.search(q) or _GITHUB_RE.search(q)):
+        return FollowupAnalysis(
+            mode="off_topic",
+            query=q,
+            sources=["tavily"],
+            reason="Sources request in plan mode",
+            user_message=(
+                "You're in **Plan** mode — I can refine the plan, or switch to **Deep** "
+                "mode to pull articles and videos. Allow a mode switch below if you want sources."
             ),
         )
 
@@ -366,9 +484,21 @@ def answer_from_context(
     question: str,
     research: MultiSourceResearchResult,
     history: Optional[List[ChatTurn]] = None,
+    current_mode: RunMode = "research",
 ) -> str:
     history = history or []
     context = build_research_context(research)
+    plan_hint = (
+        "The user is in Plan mode. Focus on actionable steps, phases, and milestones. "
+        "Do NOT push them to open article tabs — supporting sources stay collapsed.\n"
+        if current_mode == "plan"
+        else ""
+    )
+    ending_hint = (
+        "End with one short line like: 'Ask if you want the plan refined or to switch to Deep mode for sources.'\n"
+        if current_mode == "plan"
+        else "End with one short line like: 'Open the YouTube or GitHub tab on the right for links.'\n"
+    )
     system = SystemMessage(
         content=(
             "You are Atelier Research — a helpful research assistant in an ongoing session.\n"
@@ -376,8 +506,9 @@ def answer_from_context(
             "Keep it SHORT: 2-5 bullet points, one line each when possible.\n"
             "Do NOT include URLs or markdown links — links appear in the Evidence panel.\n"
             "Name videos, repos, and articles by title only.\n"
+            f"{plan_hint}"
             "When GitHub or YouTube results exist, summarize what each is for in plain language.\n"
-            "End with one short line like: 'Open the YouTube or GitHub tab on the right for links.'\n"
+            f"{ending_hint}"
             "Do not invent titles or stats not in the context.\n"
             "Never tell the user to ask a 'sharper follow-up question'.\n\n"
             f"--- Research context ---\n{context}"
@@ -443,8 +574,23 @@ def handle_followup(
     research: MultiSourceResearchResult,
     history: Optional[List[ChatTurn]] = None,
     auto_expand: bool = False,
+    current_mode: RunMode = "research",
 ) -> ResearchChatResponse:
-    analysis = analyze_followup(question, research)
+    mode_switch = detect_mode_switch(question, current_mode)
+    if mode_switch and mode_switch.suggested_mode != current_mode:
+        label = _MODE_LABELS.get(mode_switch.suggested_mode, mode_switch.suggested_mode)
+        return ResearchChatResponse(
+            answer=(
+                f"Your follow-up fits **{label}** mode better than "
+                f"**{_MODE_LABELS.get(current_mode, current_mode)}**. "
+                f"{mode_switch.reason} Allow a one-time switch?"
+            ),
+            action="propose_mode_switch",
+            mode_proposal=mode_switch,
+            related=True,
+        )
+
+    analysis = analyze_followup(question, research, current_mode=current_mode)
 
     if analysis.mode == "propose_research":
         if auto_expand and analysis.query and analysis.sources:
@@ -457,6 +603,7 @@ def handle_followup(
                 question=question,
                 research=expanded,
                 history=history,
+                current_mode=current_mode,
             )
             return ResearchChatResponse(
                 answer=answer,
@@ -475,7 +622,22 @@ def handle_followup(
             ),
         )
 
-    answer = answer_from_context(question=question, research=research, history=history)
+    if current_mode == "plan" and _PLAN_RE.search(question):
+        answer, plan_data, markdown = _plan_followup_answer(question, research)
+        return ResearchChatResponse(
+            answer=answer,
+            action="none",
+            related=True,
+            plan=plan_data,
+            plan_markdown=markdown,
+        )
+
+    answer = answer_from_context(
+        question=question,
+        research=research,
+        history=history,
+        current_mode=current_mode,
+    )
     return ResearchChatResponse(answer=answer, action="none", related=True)
 
 

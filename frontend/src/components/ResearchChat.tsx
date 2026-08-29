@@ -8,13 +8,26 @@ export type ResearchProposal = {
   reason: string;
 };
 
+export type ModeSwitchProposal = {
+  suggestedMode: import("../lib/productTypes").ResearchRunMode;
+  reason: string;
+  query?: string;
+};
+
 export type ChatMessage = {
   id: string;
   role: "user" | "assistant";
   content: string;
   loading?: boolean;
+  plan?: import("../lib/planTypes").ResearchPlan | null;
   proposal?: ResearchProposal;
   proposalStatus?: "pending" | "accepted" | "dismissed";
+  modeProposal?: ModeSwitchProposal;
+  modeProposalStatus?: "pending" | "accepted" | "dismissed";
+  /** Render evidence panel immediately after this assistant turn */
+  showSources?: boolean;
+  /** Plan mode: sources start collapsed as supporting material */
+  sourcesCollapsed?: boolean;
 };
 
 const SUGGESTIONS = [

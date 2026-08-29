@@ -266,6 +266,50 @@ def _normalize_items(raw: object, source: str) -> List[ResearchItem]:
     return items
 
 
+def state_to_multi_source_result(
+    final: dict,
+    *,
+    topic: str,
+    category: str | None,
+    routing: ResearchRoutingPlan | None,
+    sources_used: List[str],
+) -> MultiSourceResearchResult:
+    """Assemble + reclassify a MultiSourceResearchResult from a graph state dict.
+
+    Shared by run_multi_source_research (below) and the session graph
+    (app/graphs/session_graph.py), so both call sites stay in sync.
+    """
+    errors = final.get("errors") or {}
+    if not isinstance(errors, dict):
+        errors = {}
+
+    report = final.get("report")
+    if report is not None and not isinstance(report, ResearchReport):
+        try:
+            report = ResearchReport.model_validate(report)
+        except Exception:
+            report = None
+
+    return reclassify_results(
+        MultiSourceResearchResult(
+            topic=topic,
+            category=category or "general",
+            routing=routing,
+            sources_used=list(sources_used),
+            tavily_results=_normalize_items(final.get("tavily_results"), "tavily"),
+            news_results=_normalize_items(final.get("news_results"), "news"),
+            papers_results=_normalize_items(final.get("papers_results"), "papers"),
+            github_results=_normalize_items(final.get("github_results"), "github"),
+            tavily_answer=final.get("tavily_answer"),
+            media_urls=[str(u) for u in (final.get("media_urls") or []) if u],
+            errors={str(k): str(v) for k, v in errors.items()},
+            report=report,
+            report_error=final.get("report_error"),
+            fetched_at=datetime.now(timezone.utc),
+        )
+    )
+
+
 def run_multi_source_research(
     topic: str,
     limit: int = 8,
@@ -293,34 +337,12 @@ def run_multi_source_research(
         }
     )
 
-    errors = final.get("errors") or {}
-    if not isinstance(errors, dict):
-        errors = {}
-
-    report = final.get("report")
-    if report is not None and not isinstance(report, ResearchReport):
-        try:
-            report = ResearchReport.model_validate(report)
-        except Exception:
-            report = None
-
-    return reclassify_results(
-        MultiSourceResearchResult(
-            topic=topic,
-            category=category or "general",
-            routing=routing,
-            sources_used=list(resolved),
-            tavily_results=_normalize_items(final.get("tavily_results"), "tavily"),
-            news_results=_normalize_items(final.get("news_results"), "news"),
-            papers_results=_normalize_items(final.get("papers_results"), "papers"),
-            github_results=_normalize_items(final.get("github_results"), "github"),
-            tavily_answer=final.get("tavily_answer"),
-            media_urls=[str(u) for u in (final.get("media_urls") or []) if u],
-            errors={str(k): str(v) for k, v in errors.items()},
-            report=report,
-            report_error=final.get("report_error"),
-            fetched_at=datetime.now(timezone.utc),
-        )
+    return state_to_multi_source_result(
+        final,
+        topic=topic,
+        category=category,
+        routing=routing,
+        sources_used=list(resolved),
     )
 
 

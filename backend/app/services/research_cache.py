@@ -72,7 +72,7 @@ def multi_cache_key(
     return _digest(
         [
             "multi",
-            "v8-quality",
+            "v9-plan-quality",
             normalize_topic(topic),
             str(int(limit)),
             cat,

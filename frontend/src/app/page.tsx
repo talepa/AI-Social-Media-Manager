@@ -7,6 +7,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import GeminiThread, {
   type ChatMessage,
+  type ModeSwitchProposal,
   type ResearchProposal,
 } from "../components/GeminiThread";
 import ChatSidebar from "../components/ChatSidebar";
@@ -23,7 +24,9 @@ import { sourceTabsForResult } from "../components/SourcePanel";
 import type { DisplayTab } from "../lib/partitionResults";
 import {
   getExpandPermission,
+  getModeSwitchPermission,
   setExpandPermission,
+  setModeSwitchPermission,
 } from "../lib/researchPermission";
 import { formatDomain, formatSources } from "../lib/productConfig";
 import type { ResearchRoutingPlan, ResearchRunMode } from "../lib/productTypes";
@@ -885,6 +888,20 @@ function msgId() {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function clearMessageSources(messages: ChatMessage[]): ChatMessage[] {
+  return messages.map((m) => ({ ...m, showSources: false }));
+}
+
+function preferSourceTab(result: MultiSourceResearchResult): DisplayTab | null {
+  const tabs = sourceTabsForResult(result);
+  return (
+    tabs.find((t) => t === "youtube") ??
+    tabs.find((t) => t === "github") ??
+    tabs[0] ??
+    null
+  );
+}
+
 export default function Home() {
   const [view, setView] = useState<View>("home");
   const [topic, setTopic] = useState("");
@@ -1050,8 +1067,37 @@ export default function Home() {
   const stripUrls = (text: string) =>
     text.replace(/https?:\/\/\S+/g, "").replace(/\n{3,}/g, "\n\n").trim();
 
-  const fetchOpeningSummary = async (data: MultiSourceResearchResult) => {
-    if (data.tavily_answer?.trim()) return stripUrls(data.tavily_answer.trim()).slice(0, 900);
+  const fetchOpeningSummary = async (
+    data: MultiSourceResearchResult,
+    mode: ResearchRunMode,
+  ): Promise<{ content: string; plan?: import("../lib/planTypes").ResearchPlan | null }> => {
+    if (mode === "plan") {
+      try {
+        const res = await fetch(`${API_BASE}/api/research/plan`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ research: data, use_llm: false }),
+        });
+        if (res.ok) {
+          const payload = (await res.json()) as {
+            plan?: import("../lib/planTypes").ResearchPlan;
+            markdown?: string;
+          };
+          if (payload.plan) {
+            return {
+              content: payload.markdown?.trim() || payload.plan.headline,
+              plan: payload.plan,
+            };
+          }
+        }
+      } catch {
+        /* fall through */
+      }
+    }
+
+    if (data.tavily_answer?.trim()) {
+      return { content: stripUrls(data.tavily_answer.trim()).slice(0, 900) };
+    }
     try {
       const res = await fetch(`${API_BASE}/api/research/summary`, {
         method: "POST",
@@ -1060,12 +1106,17 @@ export default function Home() {
       });
       if (res.ok) {
         const payload = (await res.json()) as { summary?: string };
-        if (payload.summary?.trim()) return payload.summary.trim();
+        if (payload.summary?.trim()) return { content: payload.summary.trim() };
       }
     } catch {
       /* use fallback below */
     }
-    return "Research complete — browse the sources below or ask a follow-up.";
+    return {
+      content:
+        mode === "plan"
+          ? "Plan ready — see structured sections below."
+          : "Research complete — browse the sources below or ask a follow-up.",
+    };
   };
 
   const runResearch = async (forceRefresh = false) => {
@@ -1117,20 +1168,106 @@ export default function Home() {
       const next = data as MultiSourceResearchResult;
       setResult(next);
       if (next.routing) setPendingRouting(next.routing);
-      const summary = await fetchOpeningSummary(next);
-      setMessages((prev) => [...prev, { id: msgId(), role: "assistant", content: summary }]);
-      const tabs = sourceTabsForResult(next);
-      const prefer =
-        tabs.find((t) => t === "youtube") ??
-        tabs.find((t) => t === "github") ??
-        tabs[0];
-      setSourceTab(prefer ?? null);
+      const opening = await fetchOpeningSummary(next, runMode);
+      setMessages((prev) => [
+        ...clearMessageSources(prev),
+        {
+          id: msgId(),
+          role: "assistant",
+          content: opening.content,
+          plan: opening.plan ?? undefined,
+          showSources: true,
+          sourcesCollapsed: runMode === "plan",
+        },
+      ]);
+      const prefer = preferSourceTab(next);
+      setSourceTab(prefer);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unknown error");
       setView("home");
       setMessages([]);
     } finally {
       setSessionLoading(false);
+    }
+  };
+
+  const runModeSwitch = async (
+    messageId: string,
+    permission: "once" | "always",
+    proposalOverride?: ModeSwitchProposal,
+  ) => {
+    if (!result || expanding) return;
+    const msg = messages.find((m) => m.id === messageId);
+    const proposal = proposalOverride ?? msg?.modeProposal;
+    if (!proposal) return;
+    if (permission === "always") setModeSwitchPermission("always");
+
+    const newMode = proposal.suggestedMode;
+    const researchTopic = result.topic;
+
+    setRunMode(newMode);
+    setExpanding(true);
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.id === messageId
+          ? { ...m, modeProposalStatus: "accepted" as const, loading: true }
+          : m,
+      ),
+    );
+    try {
+      const res = await fetch(`${API_BASE}/api/research/multi`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          topic: researchTopic,
+          run_mode: newMode,
+          auto_route: true,
+          force_refresh: true,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        const detail = data.detail;
+        throw new Error(
+          typeof detail === "string" ? detail : `Mode switch failed (${res.status})`,
+        );
+      }
+      const next = data as MultiSourceResearchResult;
+      setResult(next);
+      if (next.routing) setPendingRouting(next.routing);
+      const opening = await fetchOpeningSummary(next, newMode);
+      setMessages((prev) =>
+        prev.map((m) => {
+          if (m.id === messageId) {
+            return {
+              ...m,
+              loading: false,
+              modeProposal: undefined,
+              content: opening.content,
+              plan: opening.plan ?? undefined,
+              showSources: true,
+              sourcesCollapsed: newMode === "plan",
+            };
+          }
+          return { ...m, showSources: false };
+        }),
+      );
+      setSourceTab(preferSourceTab(next));
+    } catch (e) {
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === messageId
+            ? {
+                ...m,
+                loading: false,
+                modeProposalStatus: "pending" as const,
+                content: e instanceof Error ? e.message : "Mode switch failed",
+              }
+            : m,
+        ),
+      );
+    } finally {
+      setExpanding(false);
     }
   };
 
@@ -1158,6 +1295,7 @@ export default function Home() {
     setChatBusy(true);
     try {
       const autoExpand = getExpandPermission() === "always";
+      const autoModeSwitch = getModeSwitchPermission() === "always";
       const res = await fetch(`${API_BASE}/api/research/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1165,6 +1303,7 @@ export default function Home() {
           question,
           messages: prior.map(({ role, content }) => ({ role, content })),
           research: result,
+          run_mode: runMode,
           auto_expand: autoExpand,
         }),
       });
@@ -1177,31 +1316,77 @@ export default function Home() {
         answer?: string;
         action?: string;
         proposal?: ResearchProposal;
+        mode_proposal?: {
+          suggested_mode: ResearchRunMode;
+          reason: string;
+          query?: string;
+        };
         research?: MultiSourceResearchResult;
+        plan?: import("../lib/planTypes").ResearchPlan;
+        plan_markdown?: string;
       };
+
+      if (
+        payload.action === "propose_mode_switch" &&
+        payload.mode_proposal &&
+        autoModeSwitch
+      ) {
+        const modeProposal: ModeSwitchProposal = {
+          suggestedMode: payload.mode_proposal.suggested_mode,
+          reason: payload.mode_proposal.reason,
+          query: payload.mode_proposal.query,
+        };
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === assistId
+              ? {
+                  ...m,
+                  content: payload.answer ?? "Switching mode…",
+                  loading: false,
+                  modeProposal,
+                  modeProposalStatus: "accepted" as const,
+                }
+              : m,
+          ),
+        );
+        await runModeSwitch(assistId, "always", modeProposal);
+        return;
+      }
+
+      const gotNewResearch = Boolean(payload.research);
       if (payload.research) {
         setResult(payload.research);
-        const tabs = sourceTabsForResult(payload.research);
-        const prefer =
-          tabs.find((t) => t === "youtube") ??
-          tabs.find((t) => t === "github") ??
-          tabs[0];
+        const prefer = preferSourceTab(payload.research);
         if (prefer) setSourceTab(prefer);
       }
       setMessages((prev) =>
-        prev.map((m) =>
-          m.id === assistId
-            ? {
-                ...m,
-                content: payload.answer ?? "No answer returned.",
-                loading: false,
-                proposal:
-                  payload.action === "propose_research" ? payload.proposal : undefined,
-                proposalStatus:
-                  payload.action === "propose_research" ? "pending" : undefined,
-              }
-            : m,
-        ),
+        prev.map((m) => {
+          if (m.id !== assistId) {
+            return gotNewResearch ? { ...m, showSources: false } : m;
+          }
+          return {
+            ...m,
+            content: payload.answer ?? "No answer returned.",
+            loading: false,
+            plan: payload.plan ?? m.plan,
+            proposal:
+              payload.action === "propose_research" ? payload.proposal : undefined,
+            proposalStatus:
+              payload.action === "propose_research" ? ("pending" as const) : undefined,
+            modeProposal:
+              payload.action === "propose_mode_switch" && payload.mode_proposal
+                ? {
+                    suggestedMode: payload.mode_proposal.suggested_mode,
+                    reason: payload.mode_proposal.reason,
+                    query: payload.mode_proposal.query,
+                  }
+                : undefined,
+            modeProposalStatus:
+              payload.action === "propose_mode_switch" ? ("pending" as const) : undefined,
+            showSources: gotNewResearch,
+            sourcesCollapsed: runMode === "plan" || Boolean(payload.plan),
+          };
+        }),
       );
     } catch (e) {
       setMessages((prev) =>
@@ -1262,24 +1447,23 @@ export default function Home() {
       };
       if (payload.research) {
         setResult(payload.research);
-        const tabs = sourceTabsForResult(payload.research);
-        const prefer =
-          tabs.find((t) => t === "youtube") ??
-          tabs.find((t) => t === "github") ??
-          tabs[0];
+        const prefer = preferSourceTab(payload.research);
         if (prefer) setSourceTab(prefer);
       }
       setMessages((prev) =>
-        prev.map((m) =>
-          m.id === messageId
-            ? {
-                ...m,
-                loading: false,
-                proposal: undefined,
-                content: payload.answer ?? "Search complete.",
-              }
-            : m,
-        ),
+        prev.map((m) => {
+          if (m.id !== messageId) {
+            return payload.research ? { ...m, showSources: false } : m;
+          }
+          return {
+            ...m,
+            loading: false,
+            proposal: undefined,
+            content: payload.answer ?? "Search complete.",
+            showSources: Boolean(payload.research),
+            sourcesCollapsed: runMode === "plan",
+          };
+        }),
       );
     } catch (e) {
       setMessages((prev) =>
@@ -1303,6 +1487,14 @@ export default function Home() {
     setMessages((prev) =>
       prev.map((m) =>
         m.id === messageId ? { ...m, proposalStatus: "dismissed" as const } : m,
+      ),
+    );
+  };
+
+  const dismissModeProposal = (messageId: string) => {
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.id === messageId ? { ...m, modeProposalStatus: "dismissed" as const } : m,
       ),
     );
   };
@@ -1399,7 +1591,22 @@ export default function Home() {
     setActiveSessionId(s.id);
     setTopic(s.topic);
     setRunMode(s.runMode);
-    setMessages(s.messages);
+    let restored = s.messages;
+    if (s.result && !restored.some((m) => m.showSources)) {
+      const lastAssist = restored.map((m) => m.role).lastIndexOf("assistant");
+      if (lastAssist >= 0) {
+        restored = restored.map((m, i) =>
+          i === lastAssist
+            ? {
+                ...m,
+                showSources: true,
+                sourcesCollapsed: s.runMode === "plan" || Boolean(m.plan),
+              }
+            : m,
+        );
+      }
+    }
+    setMessages(restored);
     setResult(s.result as MultiSourceResearchResult | null);
     setSourceTab(s.sourceTab);
     setChatInput("");
@@ -1421,7 +1628,7 @@ export default function Home() {
   };
 
   return (
-    <div style={{ minHeight: "100vh", position: "relative" }}>
+    <div className="app-root">
       <div className="tech-bg" aria-hidden>
         <div className="tech-bg-grid" />
         <div className="tech-bg-glow" />
@@ -1502,6 +1709,9 @@ export default function Home() {
         onAllowOnce={(id) => void runExpand(id, "once")}
         onAllowAlways={(id) => void runExpand(id, "always")}
         onDismissProposal={dismissProposal}
+        onAllowModeOnce={(id) => void runModeSwitch(id, "once")}
+        onAllowModeAlways={(id) => void runModeSwitch(id, "always")}
+        onDismissModeProposal={dismissModeProposal}
         onSourceTabChange={setSourceTab}
       />
 

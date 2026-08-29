@@ -15,9 +15,18 @@ _GITHUB_NOISE = re.compile(
     r"\b(github|repository|repositories|repo|repos|project|projects|example|"
     r"examples|tutorial|tutorials|video|videos|youtube|learn|learning|best|"
     r"any|there|related|these|those|them|this|that|open.?source|codebase|"
-    r"search|find|show|give|tell|how|what|is|are|the|and|for|with)\b",
+    r"search|find|show|give|tell|how|what|is|are|the|and|for|with|plan|"
+    r"roadmap|switch|transition|career|job|want|need|my|that)\b",
     re.I,
 )
+
+_AI_TOPIC_RE = re.compile(
+    r"\b(ai|artificial intelligence|ml engineer|machine learning engineer|"
+    r"llm|data scientist|deep learning|nlp)\b",
+    re.I,
+)
+
+_SW_ENG_ONLY_RE = re.compile(r"\bsoftware[-_ ]engineer\b", re.I)
 
 _GENERIC_REPO_RE = re.compile(
     r"(^|/)(awesome[-_]?|starred|my[-_]?awesome|awesome[-_]?list|"
@@ -87,8 +96,18 @@ def extract_github_search_terms(topic: str, max_terms: int = 4) -> List[str]:
 
 
 def build_github_search_query(topic: str) -> str:
-    terms = extract_github_search_terms(topic)
+    from app.services.query_utils import extract_plan_subject, is_ai_career_topic
+
+    subject = extract_plan_subject(topic)
+    if is_ai_career_topic(topic):
+        return (
+            "ai engineer roadmap machine learning llm in:name,description "
+            "fork:false archived:false"
+        )
+    terms = extract_github_search_terms(subject or topic)
     core = " ".join(terms)
+    if re.search(r"\broadmap\b", subject, re.I) and "roadmap" not in core:
+        core = f"{core} roadmap".strip()
     return f"{core} in:name,description fork:false archived:false"
 
 
@@ -126,6 +145,26 @@ def _is_generic_list(item: ResearchItem) -> bool:
     return bool(_GENERIC_REPO_RE.search(slug))
 
 
+def _domain_mismatch_penalty(topic: str, item: ResearchItem) -> float:
+    """Penalize repos that conflict with the user's domain (e.g. SW eng vs AI eng)."""
+    if not _AI_TOPIC_RE.search(topic):
+        return 0.0
+    slug = _repo_slug(item)
+    ai_in_repo = bool(
+        re.search(
+            r"\b(ai|ml|machine.?learning|llm|deep.?learning|data.?science|"
+            r"pytorch|tensorflow|nlp|artificial)\b",
+            slug,
+            re.I,
+        )
+    )
+    if _SW_ENG_ONLY_RE.search(slug) and not ai_in_repo:
+        return -0.65
+    if _AI_TOPIC_RE.search(topic) and not ai_in_repo and "roadmap" in slug:
+        return -0.35
+    return 0.0
+
+
 def rank_score(topic: str, item: ResearchItem) -> float:
     """Higher = more relevant to the research topic."""
     tokens = _topic_tokens(topic)
@@ -144,6 +183,8 @@ def rank_score(topic: str, item: ResearchItem) -> float:
 
     if _is_generic_list(item):
         score -= 0.45
+
+    score += _domain_mismatch_penalty(topic, item)
 
     stars = item.citation_count or 0
     score += min(math.log1p(max(stars, 0)) / 20.0, 0.1)
@@ -193,6 +234,8 @@ def filter_github_items(
         name_rel = _name_relevance(topic, item)
         score = rank_score(topic, item)
         if _is_generic_list(item) and name_rel < 0.34:
+            continue
+        if _domain_mismatch_penalty(topic, item) <= -0.5:
             continue
         if rel < min_relevance and name_rel < min_relevance and score < 0.35:
             continue

@@ -121,12 +121,17 @@ export default function SourcePanel({
   routing,
   tab,
   onTabChange,
+  defaultCollapsed = false,
+  collapsedLabel = "Supporting sources",
 }: {
   result: MultiSourceResearchResult;
   routing?: ResearchRoutingPlan | null;
   tab: DisplayTab | null;
   onTabChange: (tab: DisplayTab) => void;
+  defaultCollapsed?: boolean;
+  collapsedLabel?: string;
 }) {
+  const [expanded, setExpanded] = useState(!defaultCollapsed);
   const partitioned = useMemo(() => partitionResults(result), [result]);
   const tabs = useMemo(
     () =>
@@ -148,6 +153,24 @@ export default function SourcePanel({
     papers: partitioned.papers.length,
   };
 
+  if (defaultCollapsed && !expanded) {
+    return (
+      <div className="sources-pane sources-pane--v2 sources-pane--inline sources-pane--collapsed">
+        <button
+          type="button"
+          className="sources-collapse-toggle"
+          onClick={() => setExpanded(true)}
+          aria-expanded={false}
+        >
+          <span className="sources-collapse-label">{collapsedLabel}</span>
+          <span className="sources-collapse-meta">
+            {partitioned.total} sources · expand to browse articles, videos, and repos
+          </span>
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="sources-pane sources-pane--v2 sources-pane--inline">
       <header className="evidence-header">
@@ -158,6 +181,16 @@ export default function SourcePanel({
           </p>
           <h2 className="evidence-topic">{result.topic}</h2>
         </div>
+        {defaultCollapsed ? (
+          <button
+            type="button"
+            className="sources-collapse-btn"
+            onClick={() => setExpanded(false)}
+            aria-label="Collapse sources"
+          >
+            Hide
+          </button>
+        ) : null}
       </header>
 
       {tabs.length > 0 && (

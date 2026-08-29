@@ -13,9 +13,11 @@ from app.graphs.tavily_graph import run_tavily_research
 from app.schemas.research import (
     MultiSourceResearchResult,
     ResearchItem,
+    ResearchPlan,
     ResearchReport,
     WebResearchResult,
 )
+from app.services.plan_synthesizer import synthesize_plan
 from app.services.report_export import report_to_html, report_to_markdown
 from app.services.report_synthesizer import synthesize_report
 from app.services.research_chat import (
@@ -81,6 +83,10 @@ class ResearchChatRequest(BaseModel):
     question: str = Field(..., min_length=1)
     messages: list[ChatTurn] = Field(default_factory=list)
     research: MultiSourceResearchResult
+    run_mode: str = Field(
+        default="research",
+        description="Current session run mode (quick | research | deep | plan)",
+    )
     auto_expand: bool = Field(
         default=False,
         description="When true, run proposed research immediately (always-allow mode)",
@@ -172,6 +178,7 @@ async def research_health():
         "auto_route": True,
         "run_modes": ["quick", "research", "deep", "plan"],
         "chat": True,
+        "plan": True,
     }
 
 
@@ -195,12 +202,19 @@ async def research_route(request: RouteRequest):
     summary="Follow-up chat grounded in research",
 )
 async def research_chat(request: ResearchChatRequest):
+    mode = request.run_mode if request.run_mode in {
+        "quick",
+        "research",
+        "deep",
+        "plan",
+    } else "research"
     try:
         return handle_followup(
             question=request.question.strip(),
             research=request.research,
             history=[m.model_dump() for m in request.messages],
             auto_expand=request.auto_expand,
+            current_mode=mode,  # type: ignore[arg-type]
         )
     except Exception as exc:
         raise HTTPException(
@@ -242,9 +256,44 @@ async def research_expand(request: ExpandResearchRequest):
         ) from exc
 
 
+class PlanRequest(BaseModel):
+    research: MultiSourceResearchResult
+    use_llm: bool = Field(
+        default=False,
+        description="Optional Gemini polish (structured template always returned)",
+    )
+
+
+class PlanResponse(BaseModel):
+    plan: ResearchPlan
+    markdown: str
+    error: str | None = None
+
+
 @router.post("/research/summary", summary="Opening assistant summary for a gather result")
 async def research_summary(result: MultiSourceResearchResult):
     return {"summary": build_opening_summary(result)}
+
+
+@router.post(
+    "/research/plan",
+    response_model=PlanResponse,
+    summary="Structured action plan from gathered research",
+)
+async def research_plan(request: PlanRequest):
+    try:
+        routing = request.research.routing
+        plan, markdown, err = synthesize_plan(
+            request.research,
+            routing,
+            use_llm=request.use_llm,
+        )
+        return PlanResponse(plan=plan, markdown=markdown, error=err)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Plan synthesis failed: {exc}",
+        ) from exc
 
 
 @router.post(

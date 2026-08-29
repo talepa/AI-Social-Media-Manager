@@ -10,10 +10,15 @@ import SourcePanel, {
 } from "./SourcePanel";
 import type { ResearchRoutingPlan } from "../lib/productTypes";
 import ResearchProgress from "./ResearchProgress";
-import type { ChatMessage, ResearchProposal } from "./ResearchChat";
+import type { ChatMessage, ModeSwitchProposal, ResearchProposal } from "./ResearchChat";
 import AtelierMark from "./AtelierMark";
+import PlanView from "./PlanView";
 
-export type { ChatMessage, ResearchProposal };
+export type { ChatMessage, ModeSwitchProposal, ResearchProposal };
+
+function runModeLabel(mode: ResearchRunMode): string {
+  return RUN_MODES.find((m) => m.id === mode)?.label ?? mode;
+}
 
 function renderContent(text: string) {
   const parts = text.split(/(\*\*[^*]+\*\*)/g);
@@ -100,18 +105,26 @@ function UserMessage({
 
 function AssistantMessage({
   msg,
+  runMode,
   busy,
   expanding,
   onAllowOnce,
   onAllowAlways,
   onDismissProposal,
+  onAllowModeOnce,
+  onAllowModeAlways,
+  onDismissModeProposal,
 }: {
   msg: ChatMessage;
+  runMode: ResearchRunMode;
   busy?: boolean;
   expanding?: boolean;
   onAllowOnce: (id: string) => void;
   onAllowAlways: (id: string) => void;
   onDismissProposal: (id: string) => void;
+  onAllowModeOnce: (id: string) => void;
+  onAllowModeAlways: (id: string) => void;
+  onDismissModeProposal: (id: string) => void;
 }) {
   return (
     <div className="gemini-msg gemini-msg--assistant">
@@ -129,6 +142,8 @@ function AssistantMessage({
                 <span />
               </span>
             </div>
+          ) : msg.plan ? (
+            <PlanView plan={msg.plan} />
           ) : (
             <div className="gemini-assistant-text">{renderContent(msg.content)}</div>
           )}
@@ -169,6 +184,42 @@ function AssistantMessage({
               </div>
             </div>
           )}
+
+          {msg.modeProposal && msg.modeProposalStatus === "pending" && !msg.loading && (
+            <div className="research-permission-card gemini-in research-permission-card--mode">
+              <p className="research-permission-kicker">Switch research mode</p>
+              <p className="research-permission-query">
+                Switch to <strong>{runModeLabel(msg.modeProposal.suggestedMode)}</strong> mode
+              </p>
+              <p className="research-permission-reason">{msg.modeProposal.reason}</p>
+              <div className="research-permission-actions">
+                <button
+                  type="button"
+                  className="perm-btn perm-btn--primary"
+                  disabled={busy || expanding}
+                  onClick={() => onAllowModeOnce(msg.id)}
+                >
+                  Allow once
+                </button>
+                <button
+                  type="button"
+                  className="perm-btn perm-btn--ghost"
+                  disabled={busy || expanding}
+                  onClick={() => onAllowModeAlways(msg.id)}
+                >
+                  Always allow
+                </button>
+                <button
+                  type="button"
+                  className="perm-btn perm-btn--muted"
+                  disabled={busy || expanding}
+                  onClick={() => onDismissModeProposal(msg.id)}
+                >
+                  Stay in {runModeLabel(runMode)}
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -196,6 +247,9 @@ export default function GeminiThread({
   onAllowOnce,
   onAllowAlways,
   onDismissProposal,
+  onAllowModeOnce,
+  onAllowModeAlways,
+  onDismissModeProposal,
   onSourceTabChange,
 }: {
   isHome: boolean;
@@ -218,6 +272,9 @@ export default function GeminiThread({
   onAllowOnce: (id: string) => void;
   onAllowAlways: (id: string) => void;
   onDismissProposal: (id: string) => void;
+  onAllowModeOnce: (id: string) => void;
+  onAllowModeAlways: (id: string) => void;
+  onDismissModeProposal: (id: string) => void;
   onSourceTabChange: (tab: DisplayTab) => void;
 }) {
   const viewportRef = useRef<HTMLDivElement>(null);
@@ -227,17 +284,12 @@ export default function GeminiThread({
   const composerValue = hasThread ? input : topic;
   const composerDisabled = busy || loadingResearch || expanding;
 
-  const firstAssistantIdx = messages.findIndex((m) => m.role === "assistant");
-  const threadSplit =
-    firstAssistantIdx >= 0 ? firstAssistantIdx + 1 : messages.length;
-  const headMessages = messages.slice(0, threadSplit);
-  const tailMessages = messages.slice(threadSplit);
-  const showSources = Boolean(result && !loadingResearch);
-
   const scrollToBottom = (behavior: ScrollBehavior = "smooth") => {
     const viewport = viewportRef.current;
     if (!viewport) return;
-    viewport.scrollTo({ top: viewport.scrollHeight, behavior });
+    requestAnimationFrame(() => {
+      viewport.scrollTo({ top: viewport.scrollHeight, behavior });
+    });
   };
 
   useEffect(() => {
@@ -265,20 +317,47 @@ export default function GeminiThread({
     else onSubmit();
   };
 
-  const renderMessage = (msg: ChatMessage) =>
-    msg.role === "user" ? (
-      <UserMessage key={msg.id} content={msg.content} onShare={() => undefined} />
-    ) : (
-      <AssistantMessage
-        key={msg.id}
-        msg={msg}
-        busy={busy}
-        expanding={expanding}
-        onAllowOnce={onAllowOnce}
-        onAllowAlways={onAllowAlways}
-        onDismissProposal={onDismissProposal}
-      />
-    );
+  const renderMessage = (msg: ChatMessage) => (
+    <div key={msg.id} className="gemini-turn">
+      {msg.role === "user" ? (
+        <UserMessage content={msg.content} onShare={() => undefined} />
+      ) : (
+        <AssistantMessage
+          msg={msg}
+          runMode={runMode}
+          busy={busy}
+          expanding={expanding}
+          onAllowOnce={onAllowOnce}
+          onAllowAlways={onAllowAlways}
+          onDismissProposal={onDismissProposal}
+          onAllowModeOnce={onAllowModeOnce}
+          onAllowModeAlways={onAllowModeAlways}
+          onDismissModeProposal={onDismissModeProposal}
+        />
+      )}
+
+      {msg.role === "assistant" &&
+        msg.showSources &&
+        result &&
+        !loadingResearch &&
+        !msg.loading && (
+          <div className="gemini-sources gemini-in">
+            <SourcePanel
+              result={result}
+              routing={routing}
+              tab={sourceTab}
+              onTabChange={onSourceTabChange}
+              defaultCollapsed={msg.sourcesCollapsed}
+              collapsedLabel={
+                runMode === "plan" || msg.plan
+                  ? "Supporting evidence"
+                  : "Browse sources"
+              }
+            />
+          </div>
+        )}
+    </div>
+  );
 
   return (
     <div className={`gemini-thread${hasThread ? " gemini-thread--active" : ""}`}>
@@ -292,7 +371,7 @@ export default function GeminiThread({
       ) : (
         <div className="gemini-viewport" ref={viewportRef}>
           <div className="gemini-messages">
-            {headMessages.map(renderMessage)}
+            {messages.map(renderMessage)}
 
             {loadingResearch && (
               <div className="gemini-msg gemini-msg--assistant">
@@ -309,19 +388,6 @@ export default function GeminiThread({
                 </div>
               </div>
             )}
-
-            {showSources && (
-              <div className="gemini-sources gemini-in">
-                <SourcePanel
-                  result={result!}
-                  routing={routing}
-                  tab={sourceTab}
-                  onTabChange={onSourceTabChange}
-                />
-              </div>
-            )}
-
-            {tailMessages.map(renderMessage)}
 
             <div ref={bottomRef} className="gemini-scroll-anchor" aria-hidden />
           </div>

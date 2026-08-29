@@ -3,6 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.research import router as research_router
+from app.api.session import router as session_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -30,6 +31,10 @@ app.add_middleware(
 )
 
 app.include_router(research_router)
+# session_router (increment 1, additive) uses an in-process MemorySaver
+# checkpointer — sessions live only in this process's memory, so this only
+# works correctly with a single uvicorn worker (no --workers > 1).
+app.include_router(session_router)
 
 
 @app.get("/")
