@@ -214,17 +214,25 @@ def _findings_from_sources(
     sources: List[SourceRecord],
 ) -> List[ResearchFinding]:
     """Deterministic findings from retrieved snippets when LLM extraction fails."""
+    from app.services.source_quality import filter_sources, is_junk_text
+
+    query = sub_question.text
+    clean_sources = filter_sources(query, sources, limit=5, min_score=0.2)
+    if not clean_sources:
+        clean_sources = list(sources)[:3]
+
     findings: List[ResearchFinding] = []
-    for i, src in enumerate(sources[:6], 1):
+    for i, src in enumerate(clean_sources, 1):
         snippet = _clean_snippet(src.content or "") or _clean_snippet(src.title or "")
-        if not snippet:
+        if not snippet or is_junk_text(snippet):
             continue
-        # Prefer a concise claim: first sentence / title-led summary
         claim = snippet.split(". ")[0].strip()
         if len(claim) > 220:
             claim = claim[:217].rstrip() + "…"
         if len(claim) < 20 and src.title:
             claim = _clean_snippet(f"{src.title}: {snippet[:160]}")
+        if is_junk_text(claim):
+            continue
         findings.append(
             ResearchFinding(
                 id=f"F-{i:03d}",
@@ -234,7 +242,7 @@ def _findings_from_sources(
                 evidence_summary=snippet[:400],
                 source_ids=[src.id],
                 confidence=0.45,
-                methodology_note="Derived from source snippet (deterministic fallback)",
+                methodology_note="Derived from filtered source snippet",
             )
         )
     if not findings and sources:

@@ -15,11 +15,11 @@ from app.schemas.investigation import (
 
 def _fixtures():
     plan = InvestigationPlan(
-        objective="Evaluate LangGraph readiness",
+        objective="Evaluate LangGraph readiness for production",
         mode="evaluate",
         depth="quick",
         sub_questions=[
-            SubQuestion(id="Q1", text="Is it ready?", specialist="web"),
+            SubQuestion(id="Q1", text="Is LangGraph ready for production?", specialist="web"),
         ],
         required_specialists=["web"],
         tool_budget=6,
@@ -29,8 +29,12 @@ def _fixtures():
         SourceRecord(
             id="WEB-001",
             type="web",
-            title="Docs",
+            title="LangGraph production guide",
             url="https://example.com/docs",
+            content=(
+                "LangGraph supports durable execution and checkpointing for "
+                "production agent workflows."
+            ),
             specialist="web",
             sub_question_id="Q1",
         )
@@ -49,22 +53,28 @@ def _fixtures():
     return plan, sources, evidence
 
 
-def test_compile_report_cites_claims_and_sources():
+def test_compile_report_short_answer_and_sources(monkeypatch):
+    monkeypatch.setattr(
+        "app.agents.synthesizer._llm_short_answer",
+        lambda *a, **k: None,
+    )
     plan, sources, evidence = _fixtures()
     report = compile_report(plan=plan, evidence=evidence, sources=sources)
     assert report.mode == "compile"
-    assert "WEB-001" in report.markdown
-    assert "CLAIM-001" in report.cited_claim_ids
     assert "WEB-001" in report.cited_source_ids
     assert any(s.title == "Short answer" for s in report.sections)
-    assert any(s.title == "Details" for s in report.sections)
-    details = next(s for s in report.sections if s.title == "Details")
-    assert "(WEB-" not in details.body
-    assert "[[" in details.body  # footnote encoding for UI
-    assert "CLAIM-001" in details.claim_ids
+    assert any(s.title == "Sources" for s in report.sections)
+    assert not any(s.title == "Details" for s in report.sections)
+    short = next(s for s in report.sections if s.title == "Short answer")
+    assert "LangGraph" in short.body
+    assert "(WEB-" not in short.body
 
 
-def test_citation_validation_passes_for_compile():
+def test_citation_validation_passes_for_compile(monkeypatch):
+    monkeypatch.setattr(
+        "app.agents.synthesizer._llm_short_answer",
+        lambda *a, **k: None,
+    )
     plan, sources, evidence = _fixtures()
     report = compile_report(plan=plan, evidence=evidence, sources=sources)
     verification = validate_citations(report, evidence=evidence, sources=sources)
@@ -89,7 +99,11 @@ def test_citation_validation_fails_on_invented_id():
     assert "WEB-999" in verification.missing_sources
 
 
-def test_synthesize_report_end_to_end():
+def test_synthesize_report_end_to_end(monkeypatch):
+    monkeypatch.setattr(
+        "app.agents.synthesizer._llm_short_answer",
+        lambda *a, **k: None,
+    )
     plan, sources, evidence = _fixtures()
     report, verification = synthesize_report(
         plan=plan,
