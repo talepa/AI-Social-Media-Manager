@@ -134,7 +134,7 @@ All three use `MemorySaver` (in-memory checkpointer). This means sessions are lo
 
 | Method | Path | Purpose |
 |---|---|---|
-| `POST` | `/api/investigation/runs` | Sync investigation — plan, findings, evidence, cited report |
+| `POST` | `/api/investigation/runs` | Sync investigation — plan, findings, evidence, cited report (`use_llm` optional) |
 | `POST` | `/api/investigation/runs/stream` | Same run over **SSE** (`accepted` → `progress`/`node` → `complete`) |
 | `GET` | `/api/investigation/runs/{run_id}` | Fetch stored run status/result (in-memory; lost on restart) |
 
@@ -350,14 +350,14 @@ cd backend
 - [x] **Evidence Analyst** — CLAIM IDs, strength/agreement, conflicts, gaps
 - [x] **Synthesis + citation validation** — cited report; invented IDs rejected
 - [x] **SSE investigation stream** — `POST /runs/stream` + in-memory `GET /runs/{id}`
+- [x] **Optional LLM polish** — `use_llm` on investigation runs (default off)
+- [x] **Failure isolation + observability** — specialist/evidence/synthesis fallbacks + richer events
 
 ### In Progress
 
 ### Planned
 
-- [ ] Optional LLM polish for evidence/synthesis (deterministic path is default)
 - [ ] MCP capability layer around provider services
-- [ ] Failure handling hardening and richer observability
 - [ ] PostgreSQL checkpointer (persistent sessions)
 - [ ] Frontend redesign (Technical Intelligence Observatory aesthetic)
 

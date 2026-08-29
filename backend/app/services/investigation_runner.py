@@ -34,6 +34,7 @@ def initial_state(run_id: str, body: DirectorRequest) -> dict:
         "question": body.question.strip(),
         "mode": body.mode,
         "depth": body.depth,
+        "use_llm": bool(body.use_llm),
         "errors": {},
         "events": [],
     }
@@ -58,6 +59,8 @@ def response_from_state(run_id: str, state: dict) -> InvestigationRunResponse:
         verification=state_to_verification(state),
         tool_calls_used=int(state.get("tool_calls_used") or 0),
         llm_calls_used=int(state.get("llm_calls_used") or 0),
+        use_llm=bool(state.get("use_llm", False)),
+        errors=dict(state.get("errors") or {}),
         events=list(state.get("events") or []),
     )
 
@@ -116,6 +119,7 @@ def iter_investigation_sse(
             "question": body.question.strip(),
             "mode": body.mode,
             "depth": body.depth,
+            "use_llm": bool(body.use_llm),
         },
     )
 
@@ -145,12 +149,14 @@ def iter_investigation_sse(
                     "phase": phase,
                     "tool_calls_used": state.get("tool_calls_used", 0),
                     "llm_calls_used": state.get("llm_calls_used", 0),
+                    "use_llm": bool(state.get("use_llm", False)),
                     "has_plan": bool(state.get("plan")),
                     "finding_count": len(state.get("findings") or []),
                     "claim_count": len((state.get("evidence") or {}).get("claims") or [])
                     if isinstance(state.get("evidence"), dict)
                     else 0,
                     "has_report": bool(state.get("report")),
+                    "error_count": len(state.get("errors") or {}),
                 },
             )
 

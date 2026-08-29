@@ -15,6 +15,8 @@ untouched.
 
 from __future__ import annotations
 
+import logging
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Annotated, Dict, List, NotRequired, Optional, TypedDict
 
@@ -22,9 +24,9 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 
 from app.agents.director import create_research_plan
-from app.agents.evidence_analyst import analyze_evidence
+from app.agents.evidence_analyst import analyze_evidence, compile_evidence
 from app.agents.specialists import run_for_sub_question
-from app.agents.synthesizer import synthesize_report
+from app.agents.synthesizer import compile_report, synthesize_report, validate_citations
 from app.schemas.investigation import (
     EvidenceAnalysis,
     InvestigationDepth,
@@ -37,6 +39,8 @@ from app.schemas.investigation import (
     SubQuestion,
     VerificationResult,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _merge_dicts(left: Dict[str, str], right: Dict[str, str]) -> Dict[str, str]:
@@ -52,6 +56,7 @@ class InvestigationState(TypedDict):
     question: str
     mode: InvestigationMode
     depth: InvestigationDepth
+    use_llm: NotRequired[bool]
 
     plan: NotRequired[Optional[dict]]  # InvestigationPlan.model_dump()
 
@@ -72,7 +77,15 @@ class InvestigationState(TypedDict):
 
 def initialize_run_node(state: InvestigationState) -> dict:
     return {
-        "events": [{"event_type": "run_started", "run_id": state["run_id"]}],
+        "events": [
+            {
+                "event_type": "run_started",
+                "run_id": state["run_id"],
+                "use_llm": bool(state.get("use_llm", False)),
+                "mode": state.get("mode", "explore"),
+                "depth": state.get("depth", "standard"),
+            }
+        ],
         "tool_calls_used": 0,
         "llm_calls_used": 0,
         "errors": {},
@@ -234,6 +247,28 @@ def specialists_node(state: InvestigationState) -> dict:
         if r.error:
             errors[f"specialist:{r.sub_question_id}"] = r.error
 
+    events: List[dict] = [
+        {
+            "event_type": "specialists_completed",
+            "run_id": state["run_id"],
+            "sub_question_count": len(ordered),
+            "source_count": len(sources),
+            "finding_count": len(findings),
+            "tool_calls_used": tool_used,
+            "error_count": len(errors),
+            "partial": bool(errors) and bool(findings),
+        }
+    ]
+    for key, msg in errors.items():
+        events.append(
+            {
+                "event_type": "specialist_error",
+                "run_id": state["run_id"],
+                "key": key,
+                "error": msg,
+            }
+        )
+
     return {
         "specialist_results": [r.model_dump(mode="json") for r in rewritten],
         "sources": [s.model_dump(mode="json") for s in sources],
@@ -241,21 +276,13 @@ def specialists_node(state: InvestigationState) -> dict:
         "tool_calls_used": state.get("tool_calls_used", 0) + tool_used,
         "llm_calls_used": state.get("llm_calls_used", 0) + llm_used,
         "errors": errors,
-        "events": [
-            {
-                "event_type": "specialists_completed",
-                "run_id": state["run_id"],
-                "sub_question_count": len(ordered),
-                "source_count": len(sources),
-                "finding_count": len(findings),
-                "tool_calls_used": tool_used,
-            }
-        ],
+        "events": events,
     }
 
 
 def evidence_analyst_node(state: InvestigationState) -> dict:
     plan_dict = state.get("plan")
+    use_llm = bool(state.get("use_llm", False))
     if not plan_dict:
         return {
             "errors": {"evidence": "no plan to analyze"},
@@ -276,31 +303,63 @@ def evidence_analyst_node(state: InvestigationState) -> dict:
         SourceRecord.model_validate(item) for item in (state.get("sources") or [])
     ]
 
-    # Deterministic by default for speed/reliability; set use_llm=True later if desired
-    analysis = analyze_evidence(
-        plan=plan,
-        findings=findings,
-        sources=sources,
-        use_llm=False,
-    )
-    return {
-        "evidence": analysis.model_dump(mode="json"),
-        "llm_calls_used": state.get("llm_calls_used", 0) + analysis.llm_calls_used,
-        "events": [
-            {
-                "event_type": "evidence_analysis_completed",
-                "run_id": state["run_id"],
-                "claim_count": len(analysis.claims),
-                "conflict_count": len(analysis.conflicts),
-                "gap_count": len(analysis.gaps),
-            }
-        ],
-    }
+    started = time.perf_counter()
+    try:
+        analysis = analyze_evidence(
+            plan=plan,
+            findings=findings,
+            sources=sources,
+            use_llm=use_llm,
+        )
+        elapsed_ms = int((time.perf_counter() - started) * 1000)
+        return {
+            "evidence": analysis.model_dump(mode="json"),
+            "llm_calls_used": state.get("llm_calls_used", 0) + analysis.llm_calls_used,
+            "events": [
+                {
+                    "event_type": "evidence_analysis_completed",
+                    "run_id": state["run_id"],
+                    "claim_count": len(analysis.claims),
+                    "conflict_count": len(analysis.conflicts),
+                    "gap_count": len(analysis.gaps),
+                    "use_llm": use_llm,
+                    "llm_polished": analysis.llm_calls_used > 0,
+                    "elapsed_ms": elapsed_ms,
+                }
+            ],
+        }
+    except Exception as exc:
+        logger.exception("evidence_analyst failed — falling back to compile")
+        fallback = compile_evidence(plan=plan, findings=findings, sources=sources)
+        elapsed_ms = int((time.perf_counter() - started) * 1000)
+        return {
+            "evidence": fallback.model_dump(mode="json"),
+            "errors": {"evidence": str(exc)},
+            "events": [
+                {
+                    "event_type": "evidence_analysis_fallback",
+                    "run_id": state["run_id"],
+                    "error": str(exc),
+                    "elapsed_ms": elapsed_ms,
+                },
+                {
+                    "event_type": "evidence_analysis_completed",
+                    "run_id": state["run_id"],
+                    "claim_count": len(fallback.claims),
+                    "conflict_count": len(fallback.conflicts),
+                    "gap_count": len(fallback.gaps),
+                    "use_llm": False,
+                    "llm_polished": False,
+                    "elapsed_ms": elapsed_ms,
+                },
+            ],
+        }
 
 
 def synthesis_node(state: InvestigationState) -> dict:
     plan_dict = state.get("plan")
     evidence_dict = state.get("evidence")
+    use_llm = bool(state.get("use_llm", False))
     if not plan_dict or not evidence_dict:
         return {
             "errors": {"synthesis": "missing plan or evidence"},
@@ -319,30 +378,69 @@ def synthesis_node(state: InvestigationState) -> dict:
         SourceRecord.model_validate(item) for item in (state.get("sources") or [])
     ]
 
-    report, verification = synthesize_report(
-        plan=plan,
-        evidence=evidence,
-        sources=sources,
-        use_llm=False,
-    )
-    return {
-        "report": report.model_dump(mode="json"),
-        "verification": verification.model_dump(mode="json"),
-        "events": [
-            {
-                "event_type": "synthesis_completed",
-                "run_id": state["run_id"],
-                "section_count": len(report.sections),
-                "citation_validation_passed": verification.passed,
-            },
-            {
-                "event_type": "citation_validated",
-                "run_id": state["run_id"],
-                "passed": verification.passed,
-                "invalid_count": len(verification.invalid_citations),
-            },
-        ],
-    }
+    started = time.perf_counter()
+    try:
+        report, verification = synthesize_report(
+            plan=plan,
+            evidence=evidence,
+            sources=sources,
+            use_llm=use_llm,
+        )
+        elapsed_ms = int((time.perf_counter() - started) * 1000)
+        return {
+            "report": report.model_dump(mode="json"),
+            "verification": verification.model_dump(mode="json"),
+            "events": [
+                {
+                    "event_type": "synthesis_completed",
+                    "run_id": state["run_id"],
+                    "section_count": len(report.sections),
+                    "citation_validation_passed": verification.passed,
+                    "use_llm": use_llm,
+                    "report_mode": report.mode,
+                    "elapsed_ms": elapsed_ms,
+                },
+                {
+                    "event_type": "citation_validated",
+                    "run_id": state["run_id"],
+                    "passed": verification.passed,
+                    "invalid_count": len(verification.invalid_citations),
+                },
+            ],
+        }
+    except Exception as exc:
+        logger.exception("synthesis failed — falling back to compile")
+        report = compile_report(plan=plan, evidence=evidence, sources=sources)
+        verification = validate_citations(report, evidence=evidence, sources=sources)
+        elapsed_ms = int((time.perf_counter() - started) * 1000)
+        return {
+            "report": report.model_dump(mode="json"),
+            "verification": verification.model_dump(mode="json"),
+            "errors": {"synthesis": str(exc)},
+            "events": [
+                {
+                    "event_type": "synthesis_fallback",
+                    "run_id": state["run_id"],
+                    "error": str(exc),
+                    "elapsed_ms": elapsed_ms,
+                },
+                {
+                    "event_type": "synthesis_completed",
+                    "run_id": state["run_id"],
+                    "section_count": len(report.sections),
+                    "citation_validation_passed": verification.passed,
+                    "use_llm": False,
+                    "report_mode": report.mode,
+                    "elapsed_ms": elapsed_ms,
+                },
+                {
+                    "event_type": "citation_validated",
+                    "run_id": state["run_id"],
+                    "passed": verification.passed,
+                    "invalid_count": len(verification.invalid_citations),
+                },
+            ],
+        }
 
 
 def build_investigation_graph():

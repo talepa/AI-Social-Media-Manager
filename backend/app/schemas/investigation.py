@@ -214,6 +214,13 @@ class DirectorRequest(BaseModel):
     question: str = Field(..., min_length=1)
     mode: InvestigationMode = "explore"
     depth: InvestigationDepth = "standard"
+    use_llm: bool = Field(
+        default=False,
+        description=(
+            "When true, Evidence Analyst and Synthesizer may use Gemini to polish "
+            "conflicts/gaps and narrative. Default false keeps the fast deterministic path."
+        ),
+    )
 
 
 class DirectorResponse(BaseModel):
@@ -236,6 +243,8 @@ class InvestigationRunResponse(BaseModel):
     verification: Optional[VerificationResult] = None
     tool_calls_used: int = 0
     llm_calls_used: int = 0
+    use_llm: bool = False
+    errors: dict = Field(default_factory=dict)
     events: List[dict] = Field(default_factory=list)
 
 
