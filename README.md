@@ -73,16 +73,16 @@ Atelier runs a **Director → Specialists → Evidence → Synthesis** pipeline 
 - Full session lifecycle: gather → repeated chat turns on one thread
 - LangGraph `interrupt()` for human-in-the-loop: pauses for expand-research or mode-switch proposals
 - `Command(resume=...)` to accept/decline — server-side conversation state, no client-side history needed
-- `MemorySaver` checkpointer (in-memory, single-worker)
+- Checkpointer via `app.services.checkpointer` (Postgres when `DATABASE_URL` works, else `MemorySaver`)
 
 **Investigation Graph** (`backend/app/graphs/investigation_graph.py`)
 - `START → initialize_run → director → specialists → evidence_analyst → synthesis → END`
-- Checkpointed with `MemorySaver`, state shaped as a superset for later phases to extend
+- Same checkpointer factory as the session graph; state shaped as a superset for later phases
 - Event log tracks `run_started`, `plan_created`, `specialists_completed`, `evidence_analysis_completed`, `synthesis_completed`, `citation_validated`
 - Tool budget from depth is split across sub-questions; specialists run in parallel
 - Evidence Analyst consolidates findings into `CLAIM-*` records with strength/conflicts/gaps
 - Synthesizer emits a cited markdown report; citation validator rejects invented IDs
-- `POST /runs/stream` emits SSE as each phase advances; completed runs are readable via `GET /runs/{id}` (in-memory store)
+- `POST /runs/stream` emits SSE as each phase advances; completed runs via `GET /runs/{id}` (Postgres or in-memory store)
 
 **Parallel Source Gather** (`backend/app/graphs/research_graph.py`)
 - LangGraph parallel fan-out to web, news, papers, and GitHub nodes
@@ -101,7 +101,7 @@ Atelier has three LangGraph graphs:
 | **Session** | `graphs/session_graph.py` | Checkpointed multi-turn chat with `interrupt()` |
 | **Investigation** | `graphs/investigation_graph.py` | Director → (Specialists → Evidence → Synthesis, building out) |
 
-All three use `MemorySaver` (in-memory checkpointer). This means sessions are lost on restart, and only single-worker uvicorn is supported.
+Session + investigation graphs share `get_checkpointer()`: **PostgresSaver** when `DATABASE_URL` is reachable, otherwise **MemorySaver**. Investigation run metadata (SSE / `GET /runs/{id}`) uses the same rule via `INVESTIGATION_STORE`. With Postgres, state survives restarts; with memory, use a single uvicorn worker.
 
 ---
 
@@ -142,7 +142,7 @@ All three use `MemorySaver` (in-memory checkpointer). This means sessions are lo
 
 | Method | Path | Purpose |
 |---|---|---|
-| `GET` | `/health` | Process health |
+| `GET` | `/health` | Process health + `checkpointer` / `investigation_store` backends |
 | `GET` | `/api/health/research` | Graph / source status |
 
 ---
@@ -304,7 +304,9 @@ cp .env.example .env
 | `SEMANTIC_SCHOLAR_API_KEY` | No | Higher Semantic Scholar rate limit |
 | `RESEARCH_CACHE_ENABLED` | No | Default `true` |
 | `RESEARCH_CACHE_TTL_SECONDS` | No | Default `86400` (24h) |
-| `DATABASE_URL` | No | PostgreSQL (Docker Compose only, not yet used) |
+| `DATABASE_URL` | No | PostgreSQL for LangGraph checkpoints + investigation runs |
+| `LANGGRAPH_CHECKPOINT` | No | `auto` (default) \| `postgres` \| `memory` |
+| `INVESTIGATION_STORE` | No | `auto` (default) \| `postgres` \| `memory` |
 
 ---
 
@@ -349,16 +351,16 @@ cd backend
 - [x] **Specialist dispatch** — parallel fan-out after Director with budget split
 - [x] **Evidence Analyst** — CLAIM IDs, strength/agreement, conflicts, gaps
 - [x] **Synthesis + citation validation** — cited report; invented IDs rejected
-- [x] **SSE investigation stream** — `POST /runs/stream` + in-memory `GET /runs/{id}`
+- [x] **SSE investigation stream** — `POST /runs/stream` + `GET /runs/{id}`
 - [x] **Optional LLM polish** — `use_llm` on investigation runs (default off)
 - [x] **Failure isolation + observability** — specialist/evidence/synthesis fallbacks + richer events
+- [x] **PostgreSQL checkpointer + durable run store** — auto-fallback to memory when DB is down
 
 ### In Progress
 
 ### Planned
 
 - [ ] MCP capability layer around provider services
-- [ ] PostgreSQL checkpointer (persistent sessions)
 - [ ] Frontend redesign (Technical Intelligence Observatory aesthetic)
 
 ---

@@ -19,16 +19,14 @@ research with more sources, or switch run_mode, instead of returning an
 "action" field for the client to poll and re-request. The caller resumes with
 Command(resume=...).
 
-Checkpointer: MemorySaver (in-process only). Known limits, acceptable for this
-increment: state is lost on server restart, and this only works correctly with
-a single uvicorn worker process (see backend/app/main.py comment).
+Checkpointer: Postgres when DATABASE_URL is available, otherwise MemorySaver.
+See app.services.checkpointer.
 """
 
 from __future__ import annotations
 
 from typing import Annotated, Dict, List, Literal, NotRequired, Optional, TypedDict
 
-from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
 
@@ -42,6 +40,7 @@ from app.graphs.research_graph import (
     tavily_node,
 )
 from app.schemas.research import MultiSourceResearchResult, ResearchItem, ResearchRoutingPlan
+from app.services.checkpointer import get_checkpointer
 from app.services.plan_synthesizer import synthesize_plan
 from app.services.research_chat import (
     _PLAN_RE,
@@ -258,7 +257,7 @@ def chat_node(state: SessionState) -> dict:
     return state_update
 
 
-def build_session_graph():
+def build_session_graph(checkpointer=None):
     g = StateGraph(SessionState)
     g.add_node("route", route_node)
     g.add_node("tavily_research", tavily_node)
@@ -286,7 +285,9 @@ def build_session_graph():
     g.add_edge("build_result", END)
     g.add_edge("chat", END)
 
-    return g.compile(checkpointer=MemorySaver())
+    if checkpointer is None:
+        checkpointer, _kind = get_checkpointer()
+    return g.compile(checkpointer=checkpointer)
 
 
 session_graph = build_session_graph()

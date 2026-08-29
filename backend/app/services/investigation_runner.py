@@ -23,7 +23,7 @@ from app.graphs.investigation_graph import (
     state_to_verification,
 )
 from app.schemas.investigation import DirectorRequest, InvestigationRunResponse
-from app.services.investigation_store import investigation_store
+from app.services import investigation_store as store_mod
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +67,7 @@ def response_from_state(run_id: str, state: dict) -> InvestigationRunResponse:
 
 def run_investigation_sync(body: DirectorRequest) -> InvestigationRunResponse:
     run_id = str(uuid.uuid4())
-    investigation_store.create(
+    store_mod.investigation_store.create(
         run_id,
         question=body.question.strip(),
         mode=body.mode,
@@ -79,11 +79,11 @@ def run_investigation_sync(body: DirectorRequest) -> InvestigationRunResponse:
             config=config_for(run_id),
         )
         result = response_from_state(run_id, final)
-        investigation_store.complete(run_id, result)
+        store_mod.investigation_store.complete(run_id, result)
         return result
     except Exception as exc:
         logger.exception("investigation run failed")
-        investigation_store.fail(run_id, str(exc))
+        store_mod.investigation_store.fail(run_id, str(exc))
         raise
 
 
@@ -106,7 +106,7 @@ def iter_investigation_sse(
       - error: failure payload
     """
     run_id = str(uuid.uuid4())
-    investigation_store.create(
+    store_mod.investigation_store.create(
         run_id,
         question=body.question.strip(),
         mode=body.mode,
@@ -136,7 +136,7 @@ def iter_investigation_sse(
             new_events = events[seen_events:]
             seen_events = len(events)
             if new_events:
-                investigation_store.append_events(run_id, new_events)
+                store_mod.investigation_store.append_events(run_id, new_events)
                 for ev in new_events:
                     yield _sse("progress", ev)
 
@@ -164,11 +164,11 @@ def iter_investigation_sse(
             raise RuntimeError("investigation stream produced no state")
 
         result = response_from_state(run_id, last_state)
-        investigation_store.complete(run_id, result)
+        store_mod.investigation_store.complete(run_id, result)
         yield _sse("complete", result.model_dump(mode="json"))
     except Exception as exc:
         logger.exception("investigation stream failed")
-        investigation_store.fail(run_id, str(exc))
+        store_mod.investigation_store.fail(run_id, str(exc))
         yield _sse("error", {"run_id": run_id, "error": str(exc)})
 
 

@@ -6,9 +6,11 @@ langchain
 langchain-core
 langchain-google-genai
 langgraph>=1.2.9,<2
+langgraph-checkpoint-postgres
 httpx
 tavily-python
-psycopg2-binary
+psycopg[binary]>=3.1
+psycopg-pool
 python-dotenv
 pytest
 pytest-asyncio

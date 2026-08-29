@@ -25,8 +25,14 @@ services:
       - "8001:8001"
     volumes:
       - ./backend/app:/code/app
+    env_file:
+      - .env
     environment:
-      - DATABASE_URL=${DATABASE_URL:-postgresql://postgres:postgres@db:5432/ai_social_media_manager}
+      # Force Compose-network host; don't rely on .env POSTGRES_HOST=db expansion quirks
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-ai_social_media_manager}
+      - POSTGRES_HOST=db
+      - LANGGRAPH_CHECKPOINT=auto
+      - INVESTIGATION_STORE=auto
     depends_on:
       db:
         condition: service_healthy

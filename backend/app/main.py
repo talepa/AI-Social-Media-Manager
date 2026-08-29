@@ -32,13 +32,9 @@ app.add_middleware(
 )
 
 app.include_router(research_router)
-# session_router (increment 1, additive) uses an in-process MemorySaver
-# checkpointer — sessions live only in this process's memory, so this only
-# works correctly with a single uvicorn worker (no --workers > 1).
+# Session + investigation graphs use Postgres checkpointer when DATABASE_URL
+# is reachable, otherwise MemorySaver (see app.services.checkpointer).
 app.include_router(session_router)
-# investigation_router (Director -> Specialists -> Evidence -> Synthesis
-# pipeline) — also MemorySaver-backed, same single-worker constraint as
-# session_router.
 app.include_router(investigation_router)
 
 
@@ -56,5 +52,14 @@ async def root():
 
 @app.get("/health")
 async def health_check():
-    logger.info("Health check endpoint accessed")
-    return {"status": "ok", "service": "AI Social Media Manager Backend", "feature": 2}
+    from app.services.checkpointer import checkpointer_kind
+    from app.services import investigation_store as store_mod
+
+    store_backend = getattr(store_mod.investigation_store, "backend", "unknown")
+    return {
+        "status": "ok",
+        "service": "AI Social Media Manager Backend",
+        "feature": 2,
+        "checkpointer": checkpointer_kind(),
+        "investigation_store": store_backend,
+    }

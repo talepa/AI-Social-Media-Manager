@@ -24,7 +24,7 @@ from app.services.investigation_runner import (
     iter_investigation_sse,
     run_investigation_sync,
 )
-from app.services.investigation_store import investigation_store
+from app.services import investigation_store as store_mod
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +62,7 @@ async def start_run_stream(body: DirectorRequest):
 
 @router.get("/runs/{run_id}", response_model=InvestigationRunStatusResponse)
 async def get_run(run_id: str):
-    record = investigation_store.get(run_id)
+    record = store_mod.investigation_store.get(run_id)
     if record is None:
         raise HTTPException(status_code=404, detail="run not found")
     return InvestigationRunStatusResponse(

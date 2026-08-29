@@ -20,7 +20,6 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Annotated, Dict, List, NotRequired, Optional, TypedDict
 
-from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 
 from app.agents.director import create_research_plan
@@ -39,6 +38,7 @@ from app.schemas.investigation import (
     SubQuestion,
     VerificationResult,
 )
+from app.services.checkpointer import get_checkpointer
 
 logger = logging.getLogger(__name__)
 
@@ -443,7 +443,7 @@ def synthesis_node(state: InvestigationState) -> dict:
         }
 
 
-def build_investigation_graph():
+def build_investigation_graph(checkpointer=None):
     g = StateGraph(InvestigationState)
     g.add_node("initialize_run", initialize_run_node)
     g.add_node("director", director_node)
@@ -458,7 +458,9 @@ def build_investigation_graph():
     g.add_edge("evidence_analyst", "synthesis")
     g.add_edge("synthesis", END)
 
-    return g.compile(checkpointer=MemorySaver())
+    if checkpointer is None:
+        checkpointer, _kind = get_checkpointer()
+    return g.compile(checkpointer=checkpointer)
 
 
 investigation_graph = build_investigation_graph()

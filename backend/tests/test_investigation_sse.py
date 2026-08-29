@@ -72,15 +72,15 @@ def test_get_run_after_sync(monkeypatch):
     fake = _minimal_response("fixed-id")
 
     def _fake_sync(body: DirectorRequest) -> InvestigationRunResponse:
-        from app.services.investigation_store import investigation_store
+        from app.services import investigation_store as store_mod
 
-        investigation_store.create(
+        store_mod.investigation_store.create(
             "fixed-id",
             question=body.question,
             mode=body.mode,
             depth=body.depth,
         )
-        investigation_store.complete("fixed-id", fake)
+        store_mod.investigation_store.complete("fixed-id", fake)
         return fake
 
     monkeypatch.setattr(
