@@ -125,7 +125,7 @@ def test_web_specialist_produces_result(monkeypatch):
     result = run_specialist(
         sub_question=_SQ,
         specialist_name="web",
-        tools=[_fake_tool("brave_search"), _fake_tool("news_search")],
+        tools=[_fake_tool("tavily_search"), _fake_tool("news_search")],
         system_prompt="You are a web specialist.",
         max_tool_calls=4,
     )
@@ -176,7 +176,7 @@ def test_budget_enforcement(monkeypatch):
     result = run_specialist(
         sub_question=_SQ,
         specialist_name="web",
-        tools=[_fake_tool("brave_search")],
+        tools=[_fake_tool("tavily_search")],
         system_prompt="You are a web specialist.",
         max_tool_calls=2,
     )
@@ -192,7 +192,7 @@ def test_missing_api_key_returns_error(monkeypatch):
     result = run_specialist(
         sub_question=_SQ,
         specialist_name="web",
-        tools=[_fake_tool("brave_search")],
+        tools=[_fake_tool("tavily_search")],
         system_prompt="You are a web specialist.",
     )
     assert result.error is not None
@@ -206,7 +206,7 @@ def test_source_ids_have_correct_prefix(monkeypatch):
     result = run_specialist(
         sub_question=_SQ,
         specialist_name="web",
-        tools=[_fake_tool("brave_search")],
+        tools=[_fake_tool("tavily_search")],
         system_prompt="You are a web specialist.",
     )
     for source in result.sources:
@@ -229,7 +229,7 @@ def test_findings_have_valid_source_ids(monkeypatch):
     result = run_specialist(
         sub_question=_SQ,
         specialist_name="web",
-        tools=[_fake_tool("brave_search")],
+        tools=[_fake_tool("tavily_search")],
         system_prompt="You are a web specialist.",
     )
     all_source_ids = {s.id for s in result.sources}
@@ -247,7 +247,7 @@ def test_findings_confidence_bounded(monkeypatch):
     result = run_specialist(
         sub_question=_SQ,
         specialist_name="web",
-        tools=[_fake_tool("brave_search")],
+        tools=[_fake_tool("tavily_search")],
         system_prompt="You are a web specialist.",
     )
     for f in result.findings:

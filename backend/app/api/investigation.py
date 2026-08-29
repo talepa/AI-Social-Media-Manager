@@ -1,50 +1,79 @@
 """
 api/investigation.py
 
-Phase 1 of the Director -> Specialists -> Evidence -> Synthesis pipeline.
-Additive only -- mounted alongside /api/research/* and /api/session/*,
-which are untouched.
+Director -> Specialists -> Evidence -> Synthesis pipeline.
+Additive only -- mounted alongside /api/research/* and /api/session/*.
 
-Deliberately uses /api/investigation/* rather than the spec's literal
-/api/research/runs: /api/research/* is already a large, differently-shaped
-surface (multi/synthesize/chat/expand/plan/tavily/report/exports), so a
-separate prefix keeps this new pipeline unambiguous while it's built out.
+Endpoints:
+  POST /api/investigation/runs          — sync full run
+  POST /api/investigation/runs/stream   — SSE progress + final result
+  GET  /api/investigation/runs/{run_id} — fetch stored run
 """
 
 import logging
-import uuid
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
 
-from app.graphs.investigation_graph import investigation_graph, state_to_plan
-from app.schemas.investigation import DirectorRequest, DirectorResponse
+from app.schemas.investigation import (
+    DirectorRequest,
+    InvestigationRunResponse,
+    InvestigationRunStatusResponse,
+)
+from app.services.investigation_runner import (
+    iter_investigation_sse,
+    run_investigation_sync,
+)
+from app.services.investigation_store import investigation_store
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/investigation", tags=["Investigation"])
 
 
-@router.post("/runs", response_model=DirectorResponse)
+@router.post("/runs", response_model=InvestigationRunResponse)
 async def start_run(body: DirectorRequest):
-    run_id = str(uuid.uuid4())
     try:
-        final = investigation_graph.invoke(
-            {
-                "run_id": run_id,
-                "question": body.question.strip(),
-                "mode": body.mode,
-                "depth": body.depth,
-                "errors": {},
-                "events": [],
-            },
-            config={"configurable": {"thread_id": run_id}},
-        )
+        return run_investigation_sync(body)
+    except ValueError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
     except Exception as exc:
         logger.exception("investigation run failed")
         raise HTTPException(status_code=500, detail=f"run failed: {exc}") from exc
 
-    plan = state_to_plan(final)
-    if plan is None:
-        raise HTTPException(status_code=500, detail="director produced no plan")
 
-    return DirectorResponse(run_id=run_id, plan=plan)
+@router.post("/runs/stream")
+async def start_run_stream(body: DirectorRequest):
+    """
+    Server-Sent Events stream for a live investigation.
+
+    event: accepted | progress | node | complete | error
+    """
+    return StreamingResponse(
+        iter_investigation_sse(body),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@router.get("/runs/{run_id}", response_model=InvestigationRunStatusResponse)
+async def get_run(run_id: str):
+    record = investigation_store.get(run_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="run not found")
+    return InvestigationRunStatusResponse(
+        run_id=record.run_id,
+        status=record.status,
+        question=record.question,
+        mode=record.mode,
+        depth=record.depth,
+        created_at=record.created_at,
+        updated_at=record.updated_at,
+        events=record.events,
+        result=record.result,
+        error=record.error,
+    )

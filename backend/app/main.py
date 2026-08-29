@@ -37,8 +37,8 @@ app.include_router(research_router)
 # works correctly with a single uvicorn worker (no --workers > 1).
 app.include_router(session_router)
 # investigation_router (Director -> Specialists -> Evidence -> Synthesis
-# pipeline, phase 1: Director only) — also MemorySaver-backed, same
-# single-worker constraint as session_router.
+# pipeline) — also MemorySaver-backed, same single-worker constraint as
+# session_router.
 app.include_router(investigation_router)
 
 

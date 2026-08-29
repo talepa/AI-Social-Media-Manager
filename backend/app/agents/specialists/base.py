@@ -262,7 +262,7 @@ def _source_prefix(specialist: SpecialistName) -> str:
 
 def _source_type(specialist: SpecialistName, tool_name: str) -> str:
     type_map = {
-        "brave_search": "web",
+        "tavily_search": "web",
         "news_search": "news",
         "papers_search": "papers",
         "github_search": "github",

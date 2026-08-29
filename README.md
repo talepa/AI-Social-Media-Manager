@@ -45,17 +45,17 @@ Atelier runs a **Director → Specialists → Evidence → Synthesis** pipeline 
         ▼           ▼           ▼
    ┌─────────┐ ┌─────────┐ ┌──────────┐
    │   Web   │ │Academic │ │Repository│   Specialist agents
-   │Specialist│ │Specialist│ │Specialist│   (planned — Phase 2)
+   │Specialist│ │Specialist│ │Specialist│   (wired — Phase 2)
    └────┬────┘ └────┬────┘ └────┬─────┘
         │           │           │
         └───────────┼───────────┘
                     ▼
            ┌─────────────────┐
-           │ Evidence Analyst │   (planned — Phase 5)
+           │ Evidence Analyst │   (wired — Phase 5)
            └────────┬────────┘
                     ▼
            ┌─────────────────┐
-           │   Synthesizer   │   (planned — Phase 6)
+           │   Synthesizer   │   (wired — Phase 6)
            └────────┬────────┘
                     ▼
               Cited Report
@@ -76,9 +76,13 @@ Atelier runs a **Director → Specialists → Evidence → Synthesis** pipeline 
 - `MemorySaver` checkpointer (in-memory, single-worker)
 
 **Investigation Graph** (`backend/app/graphs/investigation_graph.py`)
-- `START → initialize_run → director → END`
+- `START → initialize_run → director → specialists → evidence_analyst → synthesis → END`
 - Checkpointed with `MemorySaver`, state shaped as a superset for later phases to extend
-- Event log tracks `run_started`, `plan_created` with specialist/question counts
+- Event log tracks `run_started`, `plan_created`, `specialists_completed`, `evidence_analysis_completed`, `synthesis_completed`, `citation_validated`
+- Tool budget from depth is split across sub-questions; specialists run in parallel
+- Evidence Analyst consolidates findings into `CLAIM-*` records with strength/conflicts/gaps
+- Synthesizer emits a cited markdown report; citation validator rejects invented IDs
+- `POST /runs/stream` emits SSE as each phase advances; completed runs are readable via `GET /runs/{id}` (in-memory store)
 
 **Parallel Source Gather** (`backend/app/graphs/research_graph.py`)
 - LangGraph parallel fan-out to web, news, papers, and GitHub nodes
@@ -130,7 +134,9 @@ All three use `MemorySaver` (in-memory checkpointer). This means sessions are lo
 
 | Method | Path | Purpose |
 |---|---|---|
-| `POST` | `/api/investigation/runs` | Create investigation — returns InvestigationPlan |
+| `POST` | `/api/investigation/runs` | Sync investigation — plan, findings, evidence, cited report |
+| `POST` | `/api/investigation/runs/stream` | Same run over **SSE** (`accepted` → `progress`/`node` → `complete`) |
+| `GET` | `/api/investigation/runs/{run_id}` | Fetch stored run status/result (in-memory; lost on restart) |
 
 ### Health
 
@@ -150,7 +156,7 @@ All three use `MemorySaver` (in-memory checkpointer). This means sessions are lo
 | **Papers** | Semantic Scholar, OpenAlex, Crossref, arXiv | Optional `SEMANTIC_SCHOLAR_API_KEY` | Academic papers, citations |
 | **GitHub** | GitHub Search API | Optional `GITHUB_TOKEN` | Repos, activity, implementation maturity |
 
-Planned: **Brave Search API** will replace Tavily as the web search provider (V1 target architecture).
+Planned: web search for the investigation Web specialist uses **Tavily** (same provider as the research desk).
 
 ---
 
@@ -335,25 +341,24 @@ cd backend
 - [x] **Disk cache** — 24h TTL, category-aware
 - [x] **Checkpointed session graph** — multi-turn chat with `interrupt()` human-in-the-loop
 - [x] **Research Director agent** — Gemini structured output → InvestigationPlan
-- [x] **Investigation graph** — checkpointed pipeline (Director phase)
-- [x] **Pytest infrastructure** — 15 tests, CI-ready
+- [x] **Investigation graph** — checkpointed pipeline (Director → Specialists)
+- [x] **Pytest infrastructure** — Director, specialists, graph, and API tests
+- [x] **Web Specialist Agent** — Tavily Search + news tools, bounded tool-calling loop
+- [x] **Academic Specialist Agent** — reuses `papers_client.py`, real tool selection
+- [x] **Repository Specialist Agent** — reuses `github_client.py`, repo health signals
+- [x] **Specialist dispatch** — parallel fan-out after Director with budget split
+- [x] **Evidence Analyst** — CLAIM IDs, strength/agreement, conflicts, gaps
+- [x] **Synthesis + citation validation** — cited report; invented IDs rejected
+- [x] **SSE investigation stream** — `POST /runs/stream` + in-memory `GET /runs/{id}`
 
 ### In Progress
 
-- [ ] **Web Specialist Agent** — Brave Search API client + bounded tool-calling loop
-- [ ] **Academic Specialist Agent** — reuses `papers_client.py`, real tool selection
-- [ ] **Repository Specialist Agent** — reuses `github_client.py`, repo health analysis
-
 ### Planned
 
-- [ ] Real Gemini tool calling with bounded LangGraph loops
-- [ ] Dynamic parallel task dispatch (Director fans out to specialists)
-- [ ] Evidence Analyst with evidence IDs and classification
-- [ ] Synthesis agent with citation validation
+- [ ] Optional LLM polish for evidence/synthesis (deterministic path is default)
 - [ ] MCP capability layer around provider services
-- [ ] Failure handling, budget enforcement, and observability
+- [ ] Failure handling hardening and richer observability
 - [ ] PostgreSQL checkpointer (persistent sessions)
-- [ ] SSE event stream (real-time progress to frontend)
 - [ ] Frontend redesign (Technical Intelligence Observatory aesthetic)
 
 ---

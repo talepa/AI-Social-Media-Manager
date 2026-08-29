@@ -128,6 +128,88 @@ class SpecialistResult(BaseModel):
     error: Optional[str] = None
 
 
+EvidenceStrength = Literal["strong", "moderate", "weak", "insufficient"]
+
+
+class EvidenceClaim(BaseModel):
+    """A consolidated claim produced by the Evidence Analyst."""
+
+    id: str = Field(..., description="Stable ID, e.g. 'CLAIM-001'")
+    claim: str
+    finding_ids: List[str] = Field(default_factory=list)
+    supporting_source_ids: List[str] = Field(default_factory=list)
+    contradicting_source_ids: List[str] = Field(default_factory=list)
+    source_families: List[str] = Field(
+        default_factory=list,
+        description="Distinct source families backing this claim (web/news/papers/github)",
+    )
+    confidence: float = Field(default=0.5, ge=0.0, le=1.0)
+    strength: EvidenceStrength = "moderate"
+    agreement_count: int = Field(
+        default=0,
+        description="How many independent findings/families support the claim",
+    )
+    uncertainty_notes: Optional[str] = None
+    sub_question_ids: List[str] = Field(default_factory=list)
+
+
+class EvidenceConflict(BaseModel):
+    """Two claims that appear to disagree."""
+
+    id: str = Field(..., description="Stable ID, e.g. 'CONFLICT-001'")
+    claim_a_id: str
+    claim_b_id: str
+    summary: str
+    source_ids: List[str] = Field(default_factory=list)
+
+
+class EvidenceGap(BaseModel):
+    """Missing evidence relative to the plan or sub-questions."""
+
+    id: str = Field(..., description="Stable ID, e.g. 'GAP-001'")
+    description: str
+    related_sub_question_ids: List[str] = Field(default_factory=list)
+    suggested_specialist: Optional[SpecialistName] = None
+
+
+class EvidenceAnalysis(BaseModel):
+    """Full Evidence Analyst output for one investigation run."""
+
+    claims: List[EvidenceClaim] = Field(default_factory=list)
+    conflicts: List[EvidenceConflict] = Field(default_factory=list)
+    gaps: List[EvidenceGap] = Field(default_factory=list)
+    summary: str = ""
+    llm_calls_used: int = 0
+
+
+class ReportSection(BaseModel):
+    title: str
+    body: str
+    claim_ids: List[str] = Field(default_factory=list)
+    source_ids: List[str] = Field(default_factory=list)
+
+
+class InvestigationReport(BaseModel):
+    """Cited research report grounded in verified evidence claims."""
+
+    headline: str
+    executive_summary: str
+    sections: List[ReportSection] = Field(default_factory=list)
+    cited_claim_ids: List[str] = Field(default_factory=list)
+    cited_source_ids: List[str] = Field(default_factory=list)
+    markdown: str = ""
+    mode: Literal["compile", "llm"] = "compile"
+
+
+class VerificationResult(BaseModel):
+    """Citation validation for the synthesized report."""
+
+    passed: bool = True
+    invalid_citations: List[str] = Field(default_factory=list)
+    missing_sources: List[str] = Field(default_factory=list)
+    notes: List[str] = Field(default_factory=list)
+
+
 class DirectorRequest(BaseModel):
     question: str = Field(..., min_length=1)
     mode: InvestigationMode = "explore"
@@ -135,5 +217,38 @@ class DirectorRequest(BaseModel):
 
 
 class DirectorResponse(BaseModel):
+    """Phase-1 response shape (plan only). Kept for compatibility."""
+
     run_id: str
     plan: InvestigationPlan
+
+
+class InvestigationRunResponse(BaseModel):
+    """Full investigation run after Director + Specialists + Evidence + Synthesis."""
+
+    run_id: str
+    plan: InvestigationPlan
+    specialist_results: List[SpecialistResult] = Field(default_factory=list)
+    sources: List[SourceRecord] = Field(default_factory=list)
+    findings: List[ResearchFinding] = Field(default_factory=list)
+    evidence: Optional[EvidenceAnalysis] = None
+    report: Optional[InvestigationReport] = None
+    verification: Optional[VerificationResult] = None
+    tool_calls_used: int = 0
+    llm_calls_used: int = 0
+    events: List[dict] = Field(default_factory=list)
+
+
+class InvestigationRunStatusResponse(BaseModel):
+    """Stored run lookup (in-memory; lost on process restart)."""
+
+    run_id: str
+    status: Literal["running", "completed", "failed"]
+    question: str = ""
+    mode: str = "explore"
+    depth: str = "standard"
+    created_at: float
+    updated_at: float
+    events: List[dict] = Field(default_factory=list)
+    result: Optional[InvestigationRunResponse] = None
+    error: Optional[str] = None
